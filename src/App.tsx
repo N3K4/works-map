@@ -459,8 +459,8 @@ function App() {
     setSelectedZone(null);
   };
 
-  // Экспорт данных
-  const exportData = async () => {
+  // Экспорт данных (синхронно — работает в sandbox)
+  const exportData = () => {
     const data = {
       images: images.map(img => ({
         name: img.name,
@@ -475,55 +475,22 @@ function App() {
     const content = JSON.stringify(data, null, 2);
     const fileName = 'zones-export.json';
 
-    // File System Access API
-    if ('showSaveFilePicker' in window) {
-      try {
-        const handle = await (window as any).showSaveFilePicker({
-          suggestedName: fileName,
-          types: [{
-            description: 'JSON Export',
-            accept: { 'application/json': ['.json'] },
-          }],
-        });
-        const writable = await handle.createWritable();
-        await writable.write(content);
-        await writable.close();
-        return;
-      } catch (err: any) {
-        if (err.name === 'AbortError') return;
-        console.warn('showSaveFilePicker failed, falling back:', err);
-      }
-    }
-
-    // Fallback
-    try {
-      const blob = new Blob([content], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      a.style.display = 'none';
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => {
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      }, 1000);
-    } catch (err) {
-      try {
-        const dataUrl = 'data:application/json;charset=utf-8,' + encodeURIComponent(content);
-        const newWindow = window.open(dataUrl, '_blank');
-        if (!newWindow) {
-          alert('Не удалось сохранить файл.');
-        }
-      } catch {
-        alert('Не удалось сохранить файл.');
-      }
-    }
+    const blob = new Blob([content], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 3000);
   };
 
-  // Экспорт полного проекта
-  const exportProject = async () => {
+  // Экспорт полного проекта (синхронно — работает в sandbox)
+  const exportProject = () => {
     const projectData = {
       version: '1.0',
       exportedAt: new Date().toISOString(),
@@ -546,52 +513,26 @@ function App() {
     const date = new Date().toISOString().slice(0, 10);
     const fileName = `project-${date}.zoneproj`;
 
-    // Способ 1: File System Access API (работает в sandbox/iframe)
-    if ('showSaveFilePicker' in window) {
-      try {
-        const handle = await (window as any).showSaveFilePicker({
-          suggestedName: fileName,
-          types: [{
-            description: 'Zone Project',
-            accept: { 'application/json': ['.zoneproj'] },
-          }],
-        });
-        const writable = await handle.createWritable();
-        await writable.write(content);
-        await writable.close();
-        return;
-      } catch (err: any) {
-        // Пользователь отменил диалог
-        if (err.name === 'AbortError') return;
-        console.warn('showSaveFilePicker failed, falling back:', err);
-      }
-    }
+    const blob = new Blob([content], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 3000);
+  };
 
-    // Способ 2: fallback через <a> element
-    try {
-      const blob = new Blob([content], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      a.style.display = 'none';
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => {
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      }, 1000);
-    } catch (err) {
-      // Способ 3: data URL в новой вкладке
-      try {
-        const dataUrl = 'data:application/json;charset=utf-8,' + encodeURIComponent(content);
-        const newWindow = window.open(dataUrl, '_blank');
-        if (!newWindow) {
-          alert('Не удалось сохранить файл. Пожалуйста, разрешите скачивание в настройках браузера.');
-        }
-      } catch {
-        alert('Не удалось сохранить файл. Попробуйте другой браузер.');
-      }
+  // Удаление изображения
+  const deleteImage = (id: string) => {
+    setImages(prev => prev.filter(img => img.id !== id));
+    if (activeImageId === id) {
+      const remaining = images.filter(img => img.id !== id);
+      setActiveImageId(remaining.length > 0 ? remaining[0].id : null);
     }
   };
 
@@ -664,15 +605,6 @@ function App() {
 
     if (projectInputRef.current) {
       projectInputRef.current.value = '';
-    }
-  };
-
-  // Удаление изображения
-  const deleteImage = (id: string) => {
-    setImages(prev => prev.filter(img => img.id !== id));
-    if (activeImageId === id) {
-      const remaining = images.filter(img => img.id !== id);
-      setActiveImageId(remaining.length > 0 ? remaining[0].id : null);
     }
   };
 
