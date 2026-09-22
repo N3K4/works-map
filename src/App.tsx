@@ -460,7 +460,7 @@ function App() {
   };
 
   // Экспорт данных
-  const exportData = () => {
+  const exportData = async () => {
     const data = {
       images: images.map(img => ({
         name: img.name,
@@ -473,19 +473,57 @@ function App() {
       })),
     };
     const content = JSON.stringify(data, null, 2);
-    const blob = new Blob([content], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'zones-export.json';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const fileName = 'zones-export.json';
+
+    // File System Access API
+    if ('showSaveFilePicker' in window) {
+      try {
+        const handle = await (window as any).showSaveFilePicker({
+          suggestedName: fileName,
+          types: [{
+            description: 'JSON Export',
+            accept: { 'application/json': ['.json'] },
+          }],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(content);
+        await writable.close();
+        return;
+      } catch (err: any) {
+        if (err.name === 'AbortError') return;
+        console.warn('showSaveFilePicker failed, falling back:', err);
+      }
+    }
+
+    // Fallback
+    try {
+      const blob = new Blob([content], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 1000);
+    } catch (err) {
+      try {
+        const dataUrl = 'data:application/json;charset=utf-8,' + encodeURIComponent(content);
+        const newWindow = window.open(dataUrl, '_blank');
+        if (!newWindow) {
+          alert('Не удалось сохранить файл.');
+        }
+      } catch {
+        alert('Не удалось сохранить файл.');
+      }
+    }
   };
 
   // Экспорт полного проекта
-  const exportProject = () => {
+  const exportProject = async () => {
     const projectData = {
       version: '1.0',
       exportedAt: new Date().toISOString(),
@@ -505,16 +543,56 @@ function App() {
       })),
     };
     const content = JSON.stringify(projectData);
-    const blob = new Blob([content], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
     const date = new Date().toISOString().slice(0, 10);
-    a.download = `project-${date}.zoneproj`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const fileName = `project-${date}.zoneproj`;
+
+    // Способ 1: File System Access API (работает в sandbox/iframe)
+    if ('showSaveFilePicker' in window) {
+      try {
+        const handle = await (window as any).showSaveFilePicker({
+          suggestedName: fileName,
+          types: [{
+            description: 'Zone Project',
+            accept: { 'application/json': ['.zoneproj'] },
+          }],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(content);
+        await writable.close();
+        return;
+      } catch (err: any) {
+        // Пользователь отменил диалог
+        if (err.name === 'AbortError') return;
+        console.warn('showSaveFilePicker failed, falling back:', err);
+      }
+    }
+
+    // Способ 2: fallback через <a> element
+    try {
+      const blob = new Blob([content], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 1000);
+    } catch (err) {
+      // Способ 3: data URL в новой вкладке
+      try {
+        const dataUrl = 'data:application/json;charset=utf-8,' + encodeURIComponent(content);
+        const newWindow = window.open(dataUrl, '_blank');
+        if (!newWindow) {
+          alert('Не удалось сохранить файл. Пожалуйста, разрешите скачивание в настройках браузера.');
+        }
+      } catch {
+        alert('Не удалось сохранить файл. Попробуйте другой браузер.');
+      }
+    }
   };
 
   // Импорт проекта
