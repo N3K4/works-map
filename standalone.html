@@ -1,0 +1,1728 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Зонирование изображений</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html, body {
+            height: 100%;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        }
+
+        body {
+            background: #111827;
+            color: #fff;
+        }
+
+        .app {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        header {
+            background: rgba(31, 41, 55, 0.95);
+            backdrop-filter: blur(8px);
+            border-bottom: 1px solid #374151;
+            padding: 8px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+            z-index: 20;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo-icon {
+            font-size: 20px;
+        }
+
+        .logo-text {
+            font-size: 18px;
+            font-weight: bold;
+            background: linear-gradient(to right, #60a5fa, #c084fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        button {
+            padding: 6px 12px;
+            border: none;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        button:hover {
+            transform: translateY(-1px);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-primary {
+            background: #2563eb;
+            color: #fff;
+        }
+
+        .btn-primary:hover {
+            background: #1d4ed8;
+        }
+
+        .btn-secondary {
+            background: #374151;
+            color: #d1d5db;
+        }
+
+        .btn-secondary:hover {
+            background: #4b5563;
+        }
+
+        .btn-success {
+            background: #059669;
+            color: #fff;
+        }
+
+        .btn-success:hover {
+            background: #047857;
+        }
+
+        .btn-danger {
+            background: rgba(220, 38, 38, 0.8);
+            color: #fff;
+        }
+
+        .btn-danger:hover {
+            background: #b91c1c;
+        }
+
+        .btn-purple {
+            background: #9333ea;
+            color: #fff;
+        }
+
+        .btn-purple:hover {
+            background: #7e22ce;
+        }
+
+        .btn-indigo {
+            background: #4f46e5;
+            color: #fff;
+        }
+
+        .btn-indigo:hover {
+            background: #4338ca;
+        }
+
+        .mode-switcher {
+            display: flex;
+            background: #374151;
+            border-radius: 6px;
+            padding: 2px;
+            margin: 0 8px;
+        }
+
+        .mode-btn {
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+            background: transparent;
+            color: #d1d5db;
+        }
+
+        .mode-btn.active {
+            background: #2563eb;
+            color: #fff;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+
+        .zoom-controls {
+            display: flex;
+            align-items: center;
+            background: rgba(55, 65, 81, 0.5);
+            border-radius: 6px;
+            padding: 2px;
+            gap: 2px;
+            margin: 0 8px;
+        }
+
+        .zoom-btn {
+            padding: 6px 8px;
+            font-size: 12px;
+            background: transparent;
+            color: #d1d5db;
+        }
+
+        .zoom-btn:hover {
+            background: #4b5563;
+        }
+
+        .zoom-display {
+            padding: 6px 8px;
+            font-size: 12px;
+            font-family: monospace;
+            min-width: 48px;
+            text-align: center;
+            color: #d1d5db;
+        }
+
+        .zoom-divider {
+            width: 1px;
+            height: 16px;
+            background: #4b5563;
+            margin: 0 2px;
+        }
+
+        .main-content {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        aside {
+            width: 256px;
+            background: rgba(31, 41, 55, 0.95);
+            border-right: 1px solid #374151;
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+            overflow: hidden;
+            z-index: 10;
+        }
+
+        .sidebar-section {
+            padding: 12px;
+            border-bottom: 1px solid #374151;
+        }
+
+        .sidebar-title {
+            font-size: 10px;
+            font-weight: bold;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .sidebar-title button {
+            font-size: 10px;
+            padding: 2px 6px;
+            background: transparent;
+            color: #60a5fa;
+        }
+
+        .sidebar-title button:hover {
+            color: #93c5fd;
+        }
+
+        .image-list {
+            max-height: 208px;
+            overflow-y: auto;
+        }
+
+        .image-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 8px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-bottom: 4px;
+        }
+
+        .image-item:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .image-item.active {
+            background: rgba(37, 99, 235, 0.2);
+            box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.4);
+        }
+
+        .image-thumb {
+            width: 32px;
+            height: 32px;
+            border-radius: 4px;
+            background: #374151;
+            overflow: hidden;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .image-thumb img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .image-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .image-name {
+            font-size: 12px;
+            font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .image-name input {
+            width: 100%;
+            background: #374151;
+            border: 1px solid #60a5fa;
+            border-radius: 4px;
+            padding: 2px 6px;
+            font-size: 12px;
+            color: #fff;
+            outline: none;
+        }
+
+        .rename-btn {
+            opacity: 0;
+            font-size: 10px;
+            padding: 0;
+            background: transparent;
+            color: #6b7280;
+        }
+
+        .image-item:hover .rename-btn {
+            opacity: 1;
+        }
+
+        .rename-btn:hover {
+            color: #60a5fa;
+        }
+
+        .image-zones-count {
+            font-size: 10px;
+            color: #6b7280;
+        }
+
+        .delete-btn {
+            opacity: 0;
+            font-size: 12px;
+            padding: 4px;
+            background: transparent;
+            color: #6b7280;
+        }
+
+        .image-item:hover .delete-btn {
+            opacity: 1;
+        }
+
+        .delete-btn:hover {
+            color: #f87171;
+        }
+
+        .category-list {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .category-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-align: left;
+            width: 100%;
+            background: transparent;
+            color: #fff;
+        }
+
+        .category-item:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .category-item.active {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .category-color {
+            width: 14px;
+            height: 14px;
+            border-radius: 3px;
+            flex-shrink: 0;
+        }
+
+        .category-name {
+            font-size: 12px;
+            font-weight: 500;
+            flex: 1;
+        }
+
+        .category-shortcut {
+            font-size: 10px;
+            color: #6b7280;
+            background: rgba(55, 65, 81, 0.5);
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+
+        .category-count {
+            font-size: 10px;
+            font-weight: bold;
+            color: #9ca3af;
+            min-width: 16px;
+            text-align: center;
+        }
+
+        .zones-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px;
+        }
+
+        .zone-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-bottom: 4px;
+        }
+
+        .zone-item:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .zone-item.selected {
+            background: rgba(255, 255, 255, 0.1);
+            box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.2);
+        }
+
+        .zone-color {
+            width: 10px;
+            height: 10px;
+            border-radius: 3px;
+            flex-shrink: 0;
+        }
+
+        .zone-label {
+            font-size: 12px;
+            flex: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .zone-delete {
+            opacity: 0;
+            font-size: 12px;
+            padding: 0;
+            background: transparent;
+            color: #6b7280;
+        }
+
+        .zone-item:hover .zone-delete {
+            opacity: 1;
+        }
+
+        .zone-delete:hover {
+            color: #f87171;
+        }
+
+        .instructions {
+            padding: 12px;
+            border-top: 1px solid #374151;
+            background: rgba(31, 41, 55, 0.5);
+        }
+
+        .instructions-title {
+            font-size: 10px;
+            font-weight: bold;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 6px;
+        }
+
+        .instructions-list {
+            display: grid;
+            gap: 2px;
+            font-size: 10px;
+            color: #6b7280;
+        }
+
+        .instructions-list kbd {
+            color: #9ca3af;
+            font-family: inherit;
+        }
+
+        main {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+            background: #030712;
+            user-select: none;
+        }
+
+        main.cursor-crosshair {
+            cursor: crosshair;
+        }
+
+        main.cursor-pointer {
+            cursor: pointer;
+        }
+
+        main.cursor-grabbing {
+            cursor: grabbing;
+        }
+
+        .viewport-bg {
+            position: absolute;
+            inset: 0;
+            opacity: 0.05;
+            background-image: radial-gradient(circle, #fff 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+
+        .upload-area {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 32px;
+        }
+
+        .upload-content {
+            text-align: center;
+            max-width: 448px;
+        }
+
+        .upload-box {
+            border: 2px dashed #374151;
+            border-radius: 16px;
+            padding: 40px;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-bottom: 16px;
+        }
+
+        .upload-box:hover {
+            border-color: rgba(96, 165, 250, 0.5);
+            background: rgba(31, 41, 55, 0.3);
+        }
+
+        .upload-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+            transition: transform 0.2s;
+        }
+
+        .upload-box:hover .upload-icon {
+            transform: scale(1.1);
+        }
+
+        .upload-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #d1d5db;
+            margin-bottom: 8px;
+        }
+
+        .upload-desc {
+            font-size: 14px;
+            color: #6b7280;
+            margin-bottom: 16px;
+        }
+
+        .upload-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: rgba(37, 99, 235, 0.2);
+            border: 1px solid rgba(96, 165, 250, 0.3);
+            border-radius: 8px;
+            color: #60a5fa;
+            font-size: 14px;
+        }
+
+        .upload-hint {
+            font-size: 12px;
+            color: #4b5563;
+            margin-top: 12px;
+        }
+
+        .or-divider {
+            color: #6b7280;
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+
+        .project-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            background: rgba(147, 51, 234, 0.2);
+            border: 1px solid rgba(168, 85, 247, 0.3);
+            border-radius: 8px;
+            color: #c084fc;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        .project-btn:hover {
+            background: rgba(147, 51, 234, 0.3);
+        }
+
+        .project-hint {
+            font-size: 12px;
+            color: #4b5563;
+            margin-top: 8px;
+        }
+
+        .canvas-container {
+            position: absolute;
+            transform-origin: 0 0;
+        }
+
+        canvas {
+            display: block;
+            border-radius: 8px;
+            box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1), 0 25px 50px -12px rgba(0, 0, 0, 0.8);
+            image-rendering: auto;
+        }
+
+        .status-bar {
+            position: absolute;
+            bottom: 16px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(31, 41, 55, 0.95);
+            backdrop-filter: blur(8px);
+            border-radius: 9999px;
+            padding: 8px 16px;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            pointer-events: none;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            color: #d1d5db;
+        }
+
+        .status-divider {
+            color: #4b5563;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+
+        .status-warning {
+            color: #fbbf24;
+        }
+
+        .zoom-hint {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            font-size: 10px;
+            color: #4b5563;
+            pointer-events: none;
+        }
+
+        .empty-state {
+            color: #4b5563;
+            font-size: 12px;
+            font-style: italic;
+            padding: 8px 0;
+        }
+
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #1f2937;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #4b5563;
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #6b7280;
+        }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <header>
+            <div class="logo">
+                <div class="logo-icon">🏗️</div>
+                <div class="logo-text">Зонирование</div>
+            </div>
+            <div class="header-actions" id="headerActions">
+                <button class="btn-primary" onclick="document.getElementById('fileInput').click()">
+                    <span>📁</span>
+                    <span>Загрузить</span>
+                </button>
+            </div>
+        </header>
+
+        <div class="main-content">
+            <aside>
+                <div class="sidebar-section">
+                    <div class="sidebar-title">
+                        <span>Изображения (<span id="imagesCount">0</span>)</span>
+                        <button onclick="document.getElementById('fileInput').click()">+ Добавить</button>
+                    </div>
+                    <div class="image-list" id="imageList">
+                        <div class="empty-state">Нет загруженных изображений</div>
+                    </div>
+                </div>
+
+                <div class="sidebar-section">
+                    <div class="sidebar-title">Категории</div>
+                    <div class="category-list" id="categoryList"></div>
+                </div>
+
+                <div class="zones-list" id="zonesList">
+                    <div class="sidebar-title">Области (<span id="zonesCount">0</span>)</div>
+                    <div class="empty-state">Загрузите изображение</div>
+                </div>
+
+                <div class="instructions">
+                    <div class="instructions-title">Управление</div>
+                    <div class="instructions-list">
+                        <div><kbd>ЛКМ</kbd> — точка / выбрать</div>
+                        <div><kbd>1-я точка</kbd> — замкнуть</div>
+                        <div><kbd>ПКМ/Esc</kbd> — отмена</div>
+                        <div><kbd>Колесо</kbd> — масштаб</div>
+                        <div><kbd>Space+перетаскивание</kbd> — панорама</div>
+                        <div><kbd>D/V</kbd> — режим</div>
+                        <div><kbd>1-5</kbd> — категория</div>
+                    </div>
+                </div>
+            </aside>
+
+            <main id="viewport" class="cursor-crosshair">
+                <div class="viewport-bg"></div>
+                <div class="upload-area" id="uploadArea">
+                    <div class="upload-content">
+                        <div class="upload-box" onclick="document.getElementById('fileInput').click()">
+                            <div class="upload-icon">🖼️</div>
+                            <div class="upload-title">Загрузите изображение</div>
+                            <div class="upload-desc">План помещения, чертёж или фото — начните выделять зоны</div>
+                            <div class="upload-btn">
+                                <span>📁</span>
+                                <span>Нажмите для выбора файла</span>
+                            </div>
+                            <div class="upload-hint">Можно загрузить несколько файлов сразу</div>
+                        </div>
+                        <div id="projectLoadSection" style="display: none;">
+                            <div class="or-divider">или</div>
+                            <button class="project-btn" onclick="document.getElementById('projectInput').click()">
+                                <span>📂</span>
+                                <span>Открыть сохранённый проект</span>
+                            </button>
+                            <div class="project-hint">Формат .zoneproj</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="status-bar" id="statusBar" style="display: none;"></div>
+                <div class="zoom-hint" id="zoomHint" style="display: none;">Колесо — зум • Space+ЛКМ — панорама</div>
+            </main>
+        </div>
+    </div>
+
+    <input type="file" id="fileInput" accept="image/*" multiple style="display: none;">
+    <input type="file" id="projectInput" accept=".zoneproj,.json" style="display: none;">
+
+    <script>
+        // Состояние приложения
+        const state = {
+            images: [],
+            activeImageId: null,
+            currentPoints: [],
+            activeCategory: 'floor',
+            mousePos: null,
+            selectedZone: null,
+            mode: 'draw',
+            zoom: 1,
+            pan: { x: 0, y: 0 },
+            isPanning: false,
+            panStart: { x: 0, y: 0 },
+            spaceHeld: false,
+            dragDistance: 0,
+            mouseDownPos: { x: 0, y: 0 }
+        };
+
+        const CATEGORIES = [
+            { id: 'floor', name: 'Пол', color: '#8B5CF6' },
+            { id: 'ceiling', name: 'Потолок', color: '#06B6D4' },
+            { id: 'walls', name: 'Стены', color: '#F59E0B' },
+            { id: 'partitions', name: 'Перегородки', color: '#10B981' },
+            { id: 'engineering', name: 'Инженерные системы', color: '#EF4444' }
+        ];
+
+        const MIN_ZOOM = 0.1;
+        const MAX_ZOOM = 10;
+
+        // DOM элементы
+        const viewport = document.getElementById('viewport');
+        const fileInput = document.getElementById('fileInput');
+        const projectInput = document.getElementById('projectInput');
+        const headerActions = document.getElementById('headerActions');
+        const imageList = document.getElementById('imageList');
+        const categoryList = document.getElementById('categoryList');
+        const zonesList = document.getElementById('zonesList');
+        const uploadArea = document.getElementById('uploadArea');
+        const statusBar = document.getElementById('statusBar');
+        const zoomHint = document.getElementById('zoomHint');
+        const projectLoadSection = document.getElementById('projectLoadSection');
+
+        let canvas = null;
+        let canvasContainer = null;
+
+        // Инициализация
+        function init() {
+            renderCategories();
+            setupEventListeners();
+            render();
+        }
+
+        // Рендеринг категорий
+        function renderCategories() {
+            categoryList.innerHTML = CATEGORIES.map((cat, index) => {
+                const activeImage = getActiveImage();
+                const count = activeImage ? activeImage.zones.filter(z => z.category === cat.id).length : 0;
+                return `
+                    <button class="category-item ${state.activeCategory === cat.id ? 'active' : ''}" 
+                            onclick="setCategory('${cat.id}')">
+                        <div class="category-color" style="background: ${cat.color}"></div>
+                        <div class="category-name">${cat.name}</div>
+                        <div class="category-shortcut">${index + 1}</div>
+                        <div class="category-count">${count}</div>
+                    </button>
+                `;
+            }).join('');
+        }
+
+        // Рендеринг списка изображений
+        function renderImageList() {
+            document.getElementById('imagesCount').textContent = state.images.length;
+            
+            if (state.images.length === 0) {
+                imageList.innerHTML = '<div class="empty-state">Нет загруженных изображений</div>';
+                return;
+            }
+
+            imageList.innerHTML = state.images.map(img => `
+                <div class="image-item ${state.activeImageId === img.id ? 'active' : ''}" 
+                     onclick="switchImage('${img.id}')">
+                    <div class="image-thumb">
+                        <img src="${img.src}" alt="">
+                    </div>
+                    <div class="image-info">
+                        <div class="image-name">
+                            <span>${img.name}</span>
+                            <button class="rename-btn" onclick="event.stopPropagation(); startRename('${img.id}', '${img.name}')">✎</button>
+                        </div>
+                        <div class="image-zones-count">${img.zones.length} обл.</div>
+                    </div>
+                    <button class="delete-btn" onclick="event.stopPropagation(); deleteImage('${img.id}')">✕</button>
+                </div>
+            `).join('');
+        }
+
+        // Рендеринг списка зон
+        function renderZonesList() {
+            const activeImage = getActiveImage();
+            const count = activeImage ? activeImage.zones.length : 0;
+            document.getElementById('zonesCount').textContent = count;
+
+            if (!activeImage) {
+                zonesList.innerHTML = `
+                    <div class="sidebar-title">Области (0)</div>
+                    <div class="empty-state">Загрузите изображение</div>
+                `;
+                return;
+            }
+
+            if (activeImage.zones.length === 0) {
+                zonesList.innerHTML = `
+                    <div class="sidebar-title">Области (0)</div>
+                    <div class="empty-state">Нет выделенных областей</div>
+                `;
+                return;
+            }
+
+            zonesList.innerHTML = `
+                <div class="sidebar-title">Области (${count})</div>
+                ${activeImage.zones.map(zone => {
+                    const category = CATEGORIES.find(c => c.id === zone.category);
+                    return `
+                        <div class="zone-item ${state.selectedZone === zone.id ? 'selected' : ''}"
+                             onclick="selectZone('${zone.id}')">
+                            <div class="zone-color" style="background: ${category?.color}"></div>
+                            <div class="zone-label">${zone.label}</div>
+                            <button class="zone-delete" onclick="event.stopPropagation(); deleteZone('${zone.id}')">✕</button>
+                        </div>
+                    `;
+                }).join('')}
+            `;
+        }
+
+        // Рендеринг canvas
+        function renderCanvas() {
+            const activeImage = getActiveImage();
+            if (!activeImage) {
+                if (canvasContainer) {
+                    canvasContainer.remove();
+                    canvasContainer = null;
+                    canvas = null;
+                }
+                return;
+            }
+
+            if (!canvasContainer) {
+                canvasContainer = document.createElement('div');
+                canvasContainer.className = 'canvas-container';
+                canvas = document.createElement('canvas');
+                canvasContainer.appendChild(canvas);
+                viewport.appendChild(canvasContainer);
+            }
+
+            canvas.width = activeImage.canvasSize.width;
+            canvas.height = activeImage.canvasSize.height;
+
+            canvasContainer.style.left = state.pan.x + 'px';
+            canvasContainer.style.top = state.pan.y + 'px';
+            canvasContainer.style.transform = `scale(${state.zoom})`;
+
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            ctx.drawImage(activeImage.img, 0, 0, canvas.width, canvas.height);
+
+            // Рисуем зоны
+            activeImage.zones.forEach(zone => {
+                const category = CATEGORIES.find(c => c.id === zone.category);
+                if (!category) return;
+
+                ctx.beginPath();
+                ctx.moveTo(zone.points[0].x, zone.points[0].y);
+                for (let i = 1; i < zone.points.length; i++) {
+                    ctx.lineTo(zone.points[i].x, zone.points[i].y);
+                }
+                ctx.closePath();
+
+                const isSelected = zone.id === state.selectedZone;
+                ctx.fillStyle = category.color + (isSelected ? '55' : '25');
+                ctx.fill();
+                ctx.strokeStyle = category.color;
+                ctx.lineWidth = (isSelected ? 3 : 1.5) / state.zoom;
+                ctx.setLineDash([]);
+                ctx.stroke();
+
+                const centerX = zone.points.reduce((sum, p) => sum + p.x, 0) / zone.points.length;
+                const centerY = zone.points.reduce((sum, p) => sum + p.y, 0) / zone.points.length;
+                const fontSize = Math.max(10, 12 / state.zoom);
+                ctx.font = `bold ${fontSize}px sans-serif`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+                ctx.lineWidth = 3 / state.zoom;
+                ctx.strokeText(zone.label, centerX, centerY);
+                ctx.fillStyle = '#ffffff';
+                ctx.fillText(zone.label, centerX, centerY);
+            });
+
+            // Текущий полигон
+            if (state.currentPoints.length > 0 && state.mode === 'draw') {
+                const category = CATEGORIES.find(c => c.id === state.activeCategory);
+                if (!category) return;
+
+                if (state.currentPoints.length >= 3) {
+                    ctx.beginPath();
+                    ctx.moveTo(state.currentPoints[0].x, state.currentPoints[0].y);
+                    for (let i = 1; i < state.currentPoints.length; i++) {
+                        ctx.lineTo(state.currentPoints[i].x, state.currentPoints[i].y);
+                    }
+                    if (state.mousePos) ctx.lineTo(state.mousePos.x, state.mousePos.y);
+                    ctx.closePath();
+                    ctx.fillStyle = category.color + '15';
+                    ctx.fill();
+                }
+
+                if (state.currentPoints.length >= 2) {
+                    ctx.beginPath();
+                    ctx.moveTo(state.currentPoints[0].x, state.currentPoints[0].y);
+                    for (let i = 1; i < state.currentPoints.length; i++) {
+                        ctx.lineTo(state.currentPoints[i].x, state.currentPoints[i].y);
+                    }
+                    ctx.strokeStyle = category.color;
+                    ctx.lineWidth = 2 / state.zoom;
+                    ctx.setLineDash([]);
+                    ctx.stroke();
+                }
+
+                if (state.mousePos && state.currentPoints.length >= 1) {
+                    ctx.beginPath();
+                    ctx.moveTo(state.currentPoints[state.currentPoints.length - 1].x, state.currentPoints[state.currentPoints.length - 1].y);
+                    ctx.lineTo(state.mousePos.x, state.mousePos.y);
+                    ctx.strokeStyle = category.color;
+                    ctx.lineWidth = 2 / state.zoom;
+                    ctx.setLineDash([6 / state.zoom, 4 / state.zoom]);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+
+                    if (state.currentPoints.length >= 3) {
+                        ctx.beginPath();
+                        ctx.moveTo(state.mousePos.x, state.mousePos.y);
+                        ctx.lineTo(state.currentPoints[0].x, state.currentPoints[0].y);
+                        ctx.strokeStyle = category.color + '60';
+                        ctx.lineWidth = 1 / state.zoom;
+                        ctx.setLineDash([4 / state.zoom, 4 / state.zoom]);
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+                    }
+                }
+
+                state.currentPoints.forEach((point, index) => {
+                    const isFirst = index === 0 && state.currentPoints.length >= 3;
+                    const radius = (isFirst ? 8 : 5) / state.zoom;
+
+                    ctx.beginPath();
+                    ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+                    ctx.fillStyle = isFirst ? '#ffffff' : category.color;
+                    ctx.fill();
+                    ctx.strokeStyle = isFirst ? category.color : '#ffffff';
+                    ctx.lineWidth = 2 / state.zoom;
+                    ctx.stroke();
+
+                    if (isFirst) {
+                        ctx.beginPath();
+                        ctx.arc(point.x, point.y, radius * 1.5, 0, Math.PI * 2);
+                        ctx.strokeStyle = category.color + '80';
+                        ctx.lineWidth = 2 / state.zoom;
+                        ctx.stroke();
+                    }
+                });
+
+                if (state.mousePos && state.currentPoints.length >= 3) {
+                    const firstPoint = state.currentPoints[0];
+                    const distance = Math.sqrt(
+                        Math.pow(state.mousePos.x - firstPoint.x, 2) + Math.pow(state.mousePos.y - firstPoint.y, 2)
+                    );
+                    const snapRadius = 15 / state.zoom;
+                    if (distance < snapRadius) {
+                        ctx.beginPath();
+                        ctx.arc(firstPoint.x, firstPoint.y, snapRadius, 0, Math.PI * 2);
+                        ctx.strokeStyle = '#ffffff';
+                        ctx.lineWidth = 2 / state.zoom;
+                        ctx.setLineDash([4 / state.zoom, 4 / state.zoom]);
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+                    }
+                }
+            }
+        }
+
+        // Рендеринг статус-бара
+        function renderStatusBar() {
+            const activeImage = getActiveImage();
+            if (!activeImage) {
+                statusBar.style.display = 'none';
+                zoomHint.style.display = 'none';
+                return;
+            }
+
+            statusBar.style.display = 'flex';
+            zoomHint.style.display = 'block';
+
+            const category = CATEGORIES.find(c => c.id === state.activeCategory);
+            const zoomPercent = Math.round(state.zoom * 100);
+
+            let statusHTML = `
+                <div class="status-item">
+                    <span>📄</span>
+                    <span style="max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${activeImage.name}</span>
+                </div>
+                <div class="status-divider">•</div>
+                <div class="status-dot" style="background: ${category?.color}"></div>
+                <div class="status-item">${category?.name}</div>
+                <div class="status-divider">•</div>
+                <div class="status-item">${state.mode === 'draw' ? '✏️' : '👆'}</div>
+            `;
+
+            if (state.currentPoints.length > 0 && state.mode === 'draw') {
+                statusHTML += `
+                    <div class="status-divider">•</div>
+                    <div class="status-item status-warning">
+                        ${state.currentPoints.length}т${state.currentPoints.length >= 3 ? ' → замкните' : ''}
+                    </div>
+                `;
+            }
+
+            statusHTML += `
+                <div class="status-divider">•</div>
+                <div class="status-item">${zoomPercent}%</div>
+            `;
+
+            statusBar.innerHTML = statusHTML;
+        }
+
+        // Рендеринг header
+        function renderHeader() {
+            const activeImage = getActiveImage();
+            
+            if (!activeImage) {
+                headerActions.innerHTML = `
+                    <button class="btn-primary" onclick="document.getElementById('fileInput').click()">
+                        <span>📁</span>
+                        <span>Загрузить</span>
+                    </button>
+                `;
+                return;
+            }
+
+            const zoomPercent = Math.round(state.zoom * 100);
+
+            headerActions.innerHTML = `
+                <button class="btn-secondary" onclick="document.getElementById('fileInput').click()">
+                    <span>📁</span>
+                    <span>Загрузить</span>
+                </button>
+                <div class="mode-switcher">
+                    <button class="mode-btn ${state.mode === 'draw' ? 'active' : ''}" onclick="setMode('draw')">✏️ Рисование</button>
+                    <button class="mode-btn ${state.mode === 'select' ? 'active' : ''}" onclick="setMode('select')">👆 Выбор</button>
+                </div>
+                <div class="zoom-controls">
+                    <button class="zoom-btn" onclick="zoomOut()">−</button>
+                    <div class="zoom-display">${zoomPercent}%</div>
+                    <button class="zoom-btn" onclick="zoomIn()">+</button>
+                    <div class="zoom-divider"></div>
+                    <button class="zoom-btn" onclick="fitToScreen()">⊡</button>
+                </div>
+                <button class="btn-purple" onclick="exportProject()" ${state.images.length === 0 ? 'disabled' : ''}>📦 Сохранить</button>
+                <button class="btn-indigo" onclick="document.getElementById('projectInput').click()">📂 Открыть</button>
+                ${activeImage.zones.length > 0 ? `
+                    <button class="btn-success" onclick="exportData()">💾 Экспорт зон</button>
+                    <button class="btn-danger" onclick="clearAllZones()">🗑️ Очистить</button>
+                ` : ''}
+            `;
+        }
+
+        // Полный рендеринг
+        function render() {
+            const activeImage = getActiveImage();
+            
+            renderHeader();
+            renderImageList();
+            renderCategories();
+            renderZonesList();
+            renderCanvas();
+            renderStatusBar();
+
+            if (activeImage) {
+                uploadArea.style.display = 'none';
+                viewport.className = state.isPanning || state.spaceHeld ? 'cursor-grabbing' : (state.mode === 'draw' ? 'cursor-crosshair' : 'cursor-pointer');
+            } else {
+                uploadArea.style.display = 'flex';
+                viewport.className = 'cursor-pointer';
+                projectLoadSection.style.display = state.images.length > 0 ? 'block' : 'none';
+            }
+        }
+
+        // Утилиты
+        function getActiveImage() {
+            return state.images.find(img => img.id === state.activeImageId) || null;
+        }
+
+        function getCanvasCoords(e) {
+            if (!canvas || !getActiveImage()) return { x: 0, y: 0 };
+            const viewportRect = viewport.getBoundingClientRect();
+            const mouseXInViewport = e.clientX - viewportRect.left;
+            const mouseYInViewport = e.clientY - viewportRect.top;
+            return {
+                x: (mouseXInViewport - state.pan.x) / state.zoom,
+                y: (mouseYInViewport - state.pan.y) / state.zoom
+            };
+        }
+
+        function isPointInPolygon(point, polygon) {
+            let inside = false;
+            for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+                const xi = polygon[i].x, yi = polygon[i].y;
+                const xj = polygon[j].x, yj = polygon[j].y;
+                const intersect = ((yi > point.y) !== (yj > point.y)) &&
+                    (point.x < (xj - xi) * (point.y - yi) / (yj - yi) + xi);
+                if (intersect) inside = !inside;
+            }
+            return inside;
+        }
+
+        // Действия
+        function setCategory(categoryId) {
+            state.activeCategory = categoryId;
+            state.mode = 'draw';
+            if (state.currentPoints.length > 0) {
+                state.currentPoints = [];
+            }
+            render();
+        }
+
+        function setMode(mode) {
+            state.mode = mode;
+            if (mode === 'select') {
+                state.currentPoints = [];
+            }
+            render();
+        }
+
+        function switchImage(id) {
+            state.activeImageId = id;
+            state.currentPoints = [];
+            state.selectedZone = null;
+            const img = state.images.find(i => i.id === id);
+            if (img) {
+                setTimeout(() => fitToScreen(img.img.width, img.img.height), 30);
+            }
+            render();
+        }
+
+        function selectZone(zoneId) {
+            state.selectedZone = zoneId;
+            state.mode = 'select';
+            render();
+        }
+
+        function deleteZone(zoneId) {
+            const activeImage = getActiveImage();
+            if (!activeImage) return;
+            activeImage.zones = activeImage.zones.filter(z => z.id !== zoneId);
+            if (state.selectedZone === zoneId) state.selectedZone = null;
+            render();
+        }
+
+        function deleteImage(id) {
+            state.images = state.images.filter(img => img.id !== id);
+            if (state.activeImageId === id) {
+                state.activeImageId = state.images.length > 0 ? state.images[0].id : null;
+            }
+            render();
+        }
+
+        function startRename(id, currentName) {
+            const newName = prompt('Введите новое имя:', currentName);
+            if (newName && newName.trim()) {
+                const img = state.images.find(i => i.id === id);
+                if (img) {
+                    img.name = newName.trim();
+                    render();
+                }
+            }
+        }
+
+        function clearAllZones() {
+            const activeImage = getActiveImage();
+            if (!activeImage) return;
+            if (confirm('Удалить все выделенные области на этом изображении?')) {
+                activeImage.zones = [];
+                state.currentPoints = [];
+                state.selectedZone = null;
+                render();
+            }
+        }
+
+        function fitToScreen(imgWidth, imgHeight) {
+            const w = imgWidth || getActiveImage()?.img.width || 0;
+            const h = imgHeight || getActiveImage()?.img.height || 0;
+            if (!w || !h) return;
+
+            const padding = 40;
+            const vw = viewport.clientWidth - padding * 2;
+            const vh = viewport.clientHeight - padding * 2;
+
+            const scaleX = vw / w;
+            const scaleY = vh / h;
+            const newZoom = Math.min(scaleX, scaleY, 1);
+
+            state.zoom = newZoom;
+            state.pan = {
+                x: (vw - w * newZoom) / 2,
+                y: (vh - h * newZoom) / 2
+            };
+            render();
+        }
+
+        function zoomIn() {
+            const rect = viewport.getBoundingClientRect();
+            const centerX = rect.width / 2;
+            const centerY = rect.height / 2;
+            const canvasX = (centerX - state.pan.x) / state.zoom;
+            const canvasY = (centerY - state.pan.y) / state.zoom;
+            const newZoom = Math.min(MAX_ZOOM, state.zoom * 1.25);
+            state.zoom = newZoom;
+            state.pan = { x: centerX - canvasX * newZoom, y: centerY - canvasY * newZoom };
+            render();
+        }
+
+        function zoomOut() {
+            const rect = viewport.getBoundingClientRect();
+            const centerX = rect.width / 2;
+            const centerY = rect.height / 2;
+            const canvasX = (centerX - state.pan.x) / state.zoom;
+            const canvasY = (centerY - state.pan.y) / state.zoom;
+            const newZoom = Math.max(MIN_ZOOM, state.zoom / 1.25);
+            state.zoom = newZoom;
+            state.pan = { x: centerX - canvasX * newZoom, y: centerY - canvasY * newZoom };
+            render();
+        }
+
+        // Экспорт/Импорт
+        async function exportData() {
+            const data = {
+                images: state.images.map(img => ({
+                    name: img.name,
+                    zones: img.zones.map(z => ({
+                        label: z.label,
+                        categoryId: z.category,
+                        categoryName: CATEGORIES.find(c => c.id === z.category)?.name,
+                        points: z.points
+                    }))
+                }))
+            };
+            const content = JSON.stringify(data, null, 2);
+            const fileName = 'zones-export.json';
+            const blob = new Blob([content], { type: 'application/json' });
+
+            if ('showSaveFilePicker' in window) {
+                try {
+                    const handle = await window.showSaveFilePicker({
+                        suggestedName: fileName,
+                        types: [{ description: 'JSON File', accept: { 'application/json': ['.json'] } }]
+                    });
+                    const writable = await handle.createWritable();
+                    await writable.write(blob);
+                    await writable.close();
+                    return;
+                } catch (err) {
+                    if (err.name === 'AbortError') return;
+                }
+            }
+
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => {
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }, 3000);
+        }
+
+        async function exportProject() {
+            const projectData = {
+                version: '1.0',
+                exportedAt: new Date().toISOString(),
+                activeImageId: state.activeImageId,
+                images: state.images.map(img => ({
+                    id: img.id,
+                    name: img.name,
+                    src: img.src,
+                    width: img.canvasSize.width,
+                    height: img.canvasSize.height,
+                    zones: img.zones.map(z => ({
+                        id: z.id,
+                        label: z.label,
+                        category: z.category,
+                        points: z.points
+                    }))
+                }))
+            };
+            const content = JSON.stringify(projectData);
+            const date = new Date().toISOString().slice(0, 10);
+            const fileName = `project-${date}.zoneproj`;
+            const blob = new Blob([content], { type: 'application/json' });
+
+            if ('showSaveFilePicker' in window) {
+                try {
+                    const handle = await window.showSaveFilePicker({
+                        suggestedName: fileName,
+                        types: [{ description: 'Zone Project File', accept: { 'application/json': ['.zoneproj'] } }]
+                    });
+                    const writable = await handle.createWritable();
+                    await writable.write(blob);
+                    await writable.close();
+                    return;
+                } catch (err) {
+                    if (err.name === 'AbortError') return;
+                }
+            }
+
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => {
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }, 3000);
+        }
+
+        function importProject(e) {
+            const file = e.target.files?.[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                try {
+                    const data = JSON.parse(event.target.result);
+
+                    if (!data.images || !Array.isArray(data.images)) {
+                        alert('Неверный формат файла проекта');
+                        return;
+                    }
+
+                    const loadPromises = data.images.map(imgData => {
+                        return new Promise((resolve, reject) => {
+                            const img = new Image();
+                            img.onload = () => {
+                                resolve({
+                                    id: imgData.id || Date.now().toString() + Math.random().toString(36).slice(2),
+                                    name: imgData.name || 'Без имени',
+                                    src: imgData.src,
+                                    img,
+                                    canvasSize: {
+                                        width: imgData.width || img.width,
+                                        height: imgData.height || img.height
+                                    },
+                                    zones: (imgData.zones || []).map(z => ({
+                                        id: z.id || Date.now().toString() + Math.random().toString(36).slice(2),
+                                        label: z.label || 'Область',
+                                        category: z.category || 'floor',
+                                        points: z.points || []
+                                    }))
+                                });
+                            };
+                            img.onerror = () => reject(new Error(`Не удалось загрузить: ${imgData.name}`));
+                            img.src = imgData.src;
+                        });
+                    });
+
+                    Promise.all(loadPromises)
+                        .then(loadedImages => {
+                            state.images = loadedImages;
+                            if (data.activeImageId && loadedImages.find(i => i.id === data.activeImageId)) {
+                                state.activeImageId = data.activeImageId;
+                            } else if (loadedImages.length > 0) {
+                                state.activeImageId = loadedImages[0].id;
+                            }
+                            state.currentPoints = [];
+                            state.selectedZone = null;
+
+                            setTimeout(() => {
+                                const activeImg = loadedImages.find(i => i.id === (data.activeImageId || loadedImages[0]?.id));
+                                if (activeImg) {
+                                    fitToScreen(activeImg.img.width, activeImg.img.height);
+                                }
+                            }, 100);
+
+                            alert(`Проект загружен: ${loadedImages.length} изобр., ${loadedImages.reduce((sum, i) => sum + i.zones.length, 0)} областей`);
+                            render();
+                        })
+                        .catch(err => {
+                            alert(`Ошибка загрузки: ${err.message}`);
+                        });
+                } catch (err) {
+                    alert('Ошибка чтения файла');
+                }
+            };
+            reader.readAsText(file);
+            projectInput.value = '';
+        }
+
+        // Обработчики событий
+        function setupEventListeners() {
+            fileInput.addEventListener('change', (e) => {
+                const files = e.target.files;
+                if (!files) return;
+
+                Array.from(files).forEach(file => {
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        const src = event.target.result;
+                        const img = new Image();
+                        img.onload = () => {
+                            const id = Date.now().toString() + Math.random().toString(36).slice(2);
+                            const name = file.name.replace(/\.[^/.]+$/, '');
+
+                            const newImage = {
+                                id,
+                                name,
+                                src,
+                                img,
+                                canvasSize: { width: img.width, height: img.height },
+                                zones: []
+                            };
+
+                            state.images.push(newImage);
+                            state.activeImageId = id;
+                            state.currentPoints = [];
+                            state.selectedZone = null;
+
+                            setTimeout(() => fitToScreen(img.width, img.height), 50);
+                            render();
+                        };
+                        img.src = src;
+                    };
+                    reader.readAsDataURL(file);
+                });
+
+                fileInput.value = '';
+            });
+
+            projectInput.addEventListener('change', importProject);
+
+            viewport.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                if (!getActiveImage()) return;
+
+                const viewportRect = viewport.getBoundingClientRect();
+                const mouseX = e.clientX - viewportRect.left;
+                const mouseY = e.clientY - viewportRect.top;
+
+                const canvasX = (mouseX - state.pan.x) / state.zoom;
+                const canvasY = (mouseY - state.pan.y) / state.zoom;
+
+                const delta = -e.deltaY * 0.001;
+                const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, state.zoom * (1 + delta)));
+
+                const newPanX = mouseX - canvasX * newZoom;
+                const newPanY = mouseY - canvasY * newZoom;
+
+                state.zoom = newZoom;
+                state.pan = { x: newPanX, y: newPanY };
+                render();
+            }, { passive: false });
+
+            viewport.addEventListener('mousedown', (e) => {
+                state.mouseDownPos = { x: e.clientX, y: e.clientY };
+                state.dragDistance = 0;
+
+                if (e.button === 1 || (state.spaceHeld && e.button === 0)) {
+                    e.preventDefault();
+                    state.isPanning = true;
+                    state.panStart = { x: e.clientX - state.pan.x, y: e.clientY - state.pan.y };
+                    render();
+                }
+            });
+
+            viewport.addEventListener('mousemove', (e) => {
+                const dx = e.clientX - state.mouseDownPos.x;
+                const dy = e.clientY - state.mouseDownPos.y;
+                state.dragDistance = Math.sqrt(dx * dx + dy * dy);
+
+                if (state.isPanning) {
+                    state.pan = {
+                        x: e.clientX - state.panStart.x,
+                        y: e.clientY - state.panStart.y
+                    };
+                    render();
+                    return;
+                }
+
+                if (!getActiveImage()) return;
+                state.mousePos = getCanvasCoords(e);
+                renderCanvas();
+            });
+
+            viewport.addEventListener('mouseup', () => {
+                if (state.isPanning) {
+                    state.isPanning = false;
+                    render();
+                }
+            });
+
+            viewport.addEventListener('mouseleave', () => {
+                state.isPanning = false;
+                state.mousePos = null;
+                render();
+            });
+
+            viewport.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                if (state.currentPoints.length > 0) {
+                    state.currentPoints = [];
+                    render();
+                }
+            });
+
+            if (canvas) {
+                canvas.addEventListener('click', handleCanvasClick);
+            }
+
+            document.addEventListener('keydown', (e) => {
+                if (e.key === ' ') {
+                    e.preventDefault();
+                    state.spaceHeld = true;
+                    render();
+                }
+                if (e.key === 'Escape') {
+                    if (state.currentPoints.length > 0) {
+                        state.currentPoints = [];
+                    } else {
+                        state.selectedZone = null;
+                    }
+                    render();
+                }
+                if (e.key === 'Delete' && state.selectedZone && getActiveImage()) {
+                    const activeImage = getActiveImage();
+                    activeImage.zones = activeImage.zones.filter(z => z.id !== state.selectedZone);
+                    state.selectedZone = null;
+                    render();
+                }
+                if ((e.key === 'v' || e.key === 'V' || e.key === 'м' || e.key === 'М') && !e.ctrlKey && !e.metaKey) {
+                    setMode('select');
+                }
+                if ((e.key === 'd' || e.key === 'D' || e.key === 'в' || e.key === 'В') && !e.ctrlKey && !e.metaKey) {
+                    setMode('draw');
+                }
+                const num = parseInt(e.key);
+                if (num >= 1 && num <= 5) {
+                    setCategory(CATEGORIES[num - 1].id);
+                }
+                if (e.key === '0' && (e.ctrlKey || e.metaKey)) {
+                    e.preventDefault();
+                    const activeImage = getActiveImage();
+                    if (activeImage) fitToScreen(activeImage.img.width, activeImage.img.height);
+                }
+            });
+
+            document.addEventListener('keyup', (e) => {
+                if (e.key === ' ') {
+                    state.spaceHeld = false;
+                    state.isPanning = false;
+                    render();
+                }
+            });
+        }
+
+        function handleCanvasClick(e) {
+            const activeImage = getActiveImage();
+            if (!activeImage) return;
+            if (state.isPanning || state.spaceHeld) return;
+            if (state.dragDistance > 5) return;
+
+            const point = getCanvasCoords(e);
+
+            if (state.mode === 'select') {
+                for (let i = activeImage.zones.length - 1; i >= 0; i--) {
+                    if (isPointInPolygon(point, activeImage.zones[i].points)) {
+                        state.selectedZone = activeImage.zones[i].id;
+                        render();
+                        return;
+                    }
+                }
+                state.selectedZone = null;
+                render();
+                return;
+            }
+
+            if (state.currentPoints.length >= 3) {
+                const firstPoint = state.currentPoints[0];
+                const distance = Math.sqrt(
+                    Math.pow(point.x - firstPoint.x, 2) + Math.pow(point.y - firstPoint.y, 2)
+                );
+                const snapRadius = 15 / state.zoom;
+                if (distance < snapRadius) {
+                    const newZone = {
+                        id: Date.now().toString(),
+                        points: [...state.currentPoints],
+                        category: state.activeCategory,
+                        label: `${CATEGORIES.find(c => c.id === state.activeCategory)?.name} ${activeImage.zones.filter(z => z.category === state.activeCategory).length + 1}`
+                    };
+                    activeImage.zones.push(newZone);
+                    state.currentPoints = [];
+                    render();
+                    return;
+                }
+            }
+
+            state.currentPoints.push(point);
+            render();
+        }
+
+        // Инициализация при загрузке
+        init();
+
+        // Перерисовка при изменении размера окна
+        window.addEventListener('resize', () => {
+            const activeImage = getActiveImage();
+            if (activeImage) {
+                fitToScreen(activeImage.img.width, activeImage.img.height);
+            }
+        });
+    </script>
+</body>
+</html>
