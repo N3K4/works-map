@@ -805,7 +805,8 @@
             panStart: { x: 0, y: 0 },
             spaceHeld: false,
             dragDistance: 0,
-            mouseDownPos: { x: 0, y: 0 }
+            mouseDownPos: { x: 0, y: 0 },
+            wasDragged: false
         };
 
         const CATEGORIES = [
@@ -940,6 +941,33 @@
                 canvasContainer = document.createElement('div');
                 canvasContainer.className = 'canvas-container';
                 canvas = document.createElement('canvas');
+                
+                // Обработчики событий canvas
+                canvas.addEventListener('mousedown', (e) => {
+                    e.stopPropagation();
+                    state.mouseDownPos = { x: e.clientX, y: e.clientY };
+                    state.dragDistance = 0;
+                    state.wasDragged = false;
+                });
+                
+                canvas.addEventListener('mousemove', (e) => {
+                    e.stopPropagation();
+                    if (!getActiveImage()) return;
+                    
+                    const dx = e.clientX - state.mouseDownPos.x;
+                    const dy = e.clientY - state.mouseDownPos.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (dist > 3) {
+                        state.wasDragged = true;
+                    }
+                    
+                    state.mousePos = getCanvasCoords(e);
+                    renderCanvas();
+                });
+                
+                canvas.addEventListener('click', handleCanvasClick);
+                
                 canvasContainer.appendChild(canvas);
                 viewport.appendChild(canvasContainer);
             }
@@ -1334,7 +1362,7 @@
         }
 
         // Экспорт/Импорт
-        async function exportData() {
+        function exportData() {
             const data = {
                 images: state.images.map(img => ({
                     name: img.name,
@@ -1348,37 +1376,23 @@
             };
             const content = JSON.stringify(data, null, 2);
             const fileName = 'zones-export.json';
-            const blob = new Blob([content], { type: 'application/json' });
-
-            if ('showSaveFilePicker' in window) {
-                try {
-                    const handle = await window.showSaveFilePicker({
-                        suggestedName: fileName,
-                        types: [{ description: 'JSON File', accept: { 'application/json': ['.json'] } }]
-                    });
-                    const writable = await handle.createWritable();
-                    await writable.write(blob);
-                    await writable.close();
-                    return;
-                } catch (err) {
-                    if (err.name === 'AbortError') return;
-                }
-            }
-
-            const url = URL.createObjectURL(blob);
+            
+            // Используем data URL для совместимости с sandbox
+            const dataUrl = 'data:application/json;charset=utf-8,' + encodeURIComponent(content);
+            
             const a = document.createElement('a');
-            a.href = url;
+            a.href = dataUrl;
             a.download = fileName;
             a.style.display = 'none';
             document.body.appendChild(a);
             a.click();
+            
             setTimeout(() => {
                 document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-            }, 3000);
+            }, 100);
         }
 
-        async function exportProject() {
+        function exportProject() {
             const projectData = {
                 version: '1.0',
                 exportedAt: new Date().toISOString(),
@@ -1400,34 +1414,20 @@
             const content = JSON.stringify(projectData);
             const date = new Date().toISOString().slice(0, 10);
             const fileName = `project-${date}.zoneproj`;
-            const blob = new Blob([content], { type: 'application/json' });
-
-            if ('showSaveFilePicker' in window) {
-                try {
-                    const handle = await window.showSaveFilePicker({
-                        suggestedName: fileName,
-                        types: [{ description: 'Zone Project File', accept: { 'application/json': ['.zoneproj'] } }]
-                    });
-                    const writable = await handle.createWritable();
-                    await writable.write(blob);
-                    await writable.close();
-                    return;
-                } catch (err) {
-                    if (err.name === 'AbortError') return;
-                }
-            }
-
-            const url = URL.createObjectURL(blob);
+            
+            // Используем data URL для совместимости с sandbox
+            const dataUrl = 'data:application/json;charset=utf-8,' + encodeURIComponent(content);
+            
             const a = document.createElement('a');
-            a.href = url;
+            a.href = dataUrl;
             a.download = fileName;
             a.style.display = 'none';
             document.body.appendChild(a);
             a.click();
+            
             setTimeout(() => {
                 document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-            }, 3000);
+            }, 100);
         }
 
         function importProject(e) {
@@ -1495,11 +1495,18 @@
                             alert(`Ошибка загрузки: ${err.message}`);
                         });
                 } catch (err) {
-                    alert('Ошибка чтения файла');
+                    alert('Ошибка чтения файла: ' + err.message);
                 }
             };
+            reader.onerror = () => {
+                alert('Ошибка чтения файла');
+            };
             reader.readAsText(file);
-            projectInput.value = '';
+            
+            // Сбрасываем значение input для возможности повторной загрузки того же файла
+            setTimeout(() => {
+                e.target.value = '';
+            }, 100);
         }
 
         // Обработчики событий
@@ -1567,8 +1574,12 @@
             }, { passive: false });
 
             viewport.addEventListener('mousedown', (e) => {
+                // Игнорируем клики на canvas - они обрабатываются отдельно
+                if (e.target === canvas) return;
+                
                 state.mouseDownPos = { x: e.clientX, y: e.clientY };
                 state.dragDistance = 0;
+                state.wasDragged = false;
 
                 if (e.button === 1 || (state.spaceHeld && e.button === 0)) {
                     e.preventDefault();
@@ -1581,7 +1592,12 @@
             viewport.addEventListener('mousemove', (e) => {
                 const dx = e.clientX - state.mouseDownPos.x;
                 const dy = e.clientY - state.mouseDownPos.y;
-                state.dragDistance = Math.sqrt(dx * dx + dy * dy);
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                
+                if (dist > 3) {
+                    state.wasDragged = true;
+                }
+                state.dragDistance = dist;
 
                 if (state.isPanning) {
                     state.pan = {
@@ -1618,9 +1634,7 @@
                 }
             });
 
-            if (canvas) {
-                canvas.addEventListener('click', handleCanvasClick);
-            }
+            // Обработчик клика на canvas добавляется в renderCanvas()
 
             document.addEventListener('keydown', (e) => {
                 if (e.key === ' ') {
@@ -1669,10 +1683,12 @@
         }
 
         function handleCanvasClick(e) {
+            e.stopPropagation();
+            
+            if (!canvas) return;
             const activeImage = getActiveImage();
             if (!activeImage) return;
-            if (state.isPanning || state.spaceHeld) return;
-            if (state.dragDistance > 5) return;
+            if (state.wasDragged) return;
 
             const point = getCanvasCoords(e);
 

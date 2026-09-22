@@ -480,7 +480,7 @@ function App() {
   };
 
   // Экспорт зон (JSON)
-  const exportData = async () => {
+  const exportData = () => {
     const data = {
       images: images.map(img => ({
         name: img.name,
@@ -494,55 +494,24 @@ function App() {
     };
     const content = JSON.stringify(data, null, 2);
     const fileName = 'zones-export.json';
-    const blob = new Blob([content], { type: 'application/json' });
-
-    if ('showSaveFilePicker' in window) {
-      try {
-        const handle = await (window as any).showSaveFilePicker({
-          suggestedName: fileName,
-          types: [{ description: 'JSON File', accept: { 'application/json': ['.json'] } }],
-        });
-        const writable = await handle.createWritable();
-        await writable.write(blob);
-        await writable.close();
-        return;
-      } catch (err: any) {
-        if (err.name === 'AbortError') return;
-      }
-    }
-
-    try {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      a.style.display = 'none';
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => {
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      }, 3000);
-      return;
-    } catch {
-      // Fallback
-    }
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      const a = document.createElement('a');
-      a.href = reader.result as string;
-      a.download = fileName;
-      a.style.display = 'none';
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => document.body.removeChild(a), 100);
-    };
-    reader.readAsDataURL(blob);
+    
+    // Используем data URL для совместимости с sandbox
+    const dataUrl = 'data:application/json;charset=utf-8,' + encodeURIComponent(content);
+    
+    const a = document.createElement('a');
+    a.href = dataUrl;
+    a.download = fileName;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    
+    setTimeout(() => {
+      document.body.removeChild(a);
+    }, 100);
   };
 
   // Экспорт проекта (.zoneproj)
-  const exportProject = async () => {
+  const exportProject = () => {
     const projectData = {
       version: '1.0',
       exportedAt: new Date().toISOString(),
@@ -564,51 +533,20 @@ function App() {
     const content = JSON.stringify(projectData);
     const date = new Date().toISOString().slice(0, 10);
     const fileName = `project-${date}.zoneproj`;
-    const blob = new Blob([content], { type: 'application/json' });
-
-    if ('showSaveFilePicker' in window) {
-      try {
-        const handle = await (window as any).showSaveFilePicker({
-          suggestedName: fileName,
-          types: [{ description: 'Zone Project File', accept: { 'application/json': ['.zoneproj'] } }],
-        });
-        const writable = await handle.createWritable();
-        await writable.write(blob);
-        await writable.close();
-        return;
-      } catch (err: any) {
-        if (err.name === 'AbortError') return;
-      }
-    }
-
-    try {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      a.style.display = 'none';
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => {
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      }, 3000);
-      return;
-    } catch {
-      // Fallback
-    }
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      const a = document.createElement('a');
-      a.href = reader.result as string;
-      a.download = fileName;
-      a.style.display = 'none';
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => document.body.removeChild(a), 100);
-    };
-    reader.readAsDataURL(blob);
+    
+    // Используем data URL для совместимости с sandbox
+    const dataUrl = 'data:application/json;charset=utf-8,' + encodeURIComponent(content);
+    
+    const a = document.createElement('a');
+    a.href = dataUrl;
+    a.download = fileName;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    
+    setTimeout(() => {
+      document.body.removeChild(a);
+    }, 100);
   };
 
   const deleteImage = (id: string) => {
