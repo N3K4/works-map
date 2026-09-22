@@ -502,29 +502,21 @@ function App() {
       });
     }
 
-    if (isHighlighting) {
-      requestAnimationFrame(() => {
-        const canvas = canvasRef.current;
-        if (canvas) canvas.dispatchEvent(new Event('redraw'));
-      });
-    }
+    // Highlight animation handled by interval above
   }, [activeImage, currentPoints, mousePos, activeCategory, selectedZone, selectedGroup, mode, zoom, highlightZoneId, highlightUntil]);
 
   useEffect(() => {
     if (!highlightZoneId) return;
-    let raf: number;
-    const loop = () => {
-      if (Date.now() < highlightUntil) {
-        const canvas = canvasRef.current;
-        if (canvas && activeImage) {
-          canvas.dispatchEvent(new Event('redraw'));
-        }
-        raf = requestAnimationFrame(loop);
+    const interval = setInterval(() => {
+      if (Date.now() >= highlightUntil) {
+        clearInterval(interval);
+        return;
       }
-    };
-    raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
-  }, [highlightZoneId, highlightUntil, activeImage]);
+      // Trigger re-render
+      setMousePos(prev => prev ? { ...prev } : null);
+    }, 50);
+    return () => clearInterval(interval);
+  }, [highlightZoneId, highlightUntil]);
 
   const isPointInPolygon = (point: Point, polygon: Point[]): boolean => {
     let inside = false;
@@ -540,11 +532,9 @@ function App() {
 
   const clearAllZones = () => {
     if (!activeImage) return;
-    if (window.confirm('Удалить все области на этом изображении?')) {
-      updateImage({ zones: [], groups: [] });
-      setCurrentPoints([]);
-      setSelectedZone(null);
-    }
+    updateImage({ zones: [], groups: [] });
+    setCurrentPoints([]);
+    setSelectedZone(null);
   };
 
   const exportData = () => {
@@ -598,21 +588,34 @@ function App() {
   const openInNewTab = () => {
     if (!exportModal) return;
     const blob = new Blob([exportModal.content], { type: 'application/json' });
-    window.open(URL.createObjectURL(blob), '_blank');
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   const copyToClipboard = async () => {
     if (!exportModal) return;
     try {
-      await navigator.clipboard.writeText(exportModal.content);
-      alert('Скопировано!');
-    } catch {
-      const ta = document.createElement('textarea');
-      ta.value = exportModal.content;
-      document.body.appendChild(ta); ta.select();
-      document.execCommand('copy');
-      document.body.removeChild(ta);
-      alert('Скопировано!');
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(exportModal.content);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = exportModal.content;
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+    } catch (err) {
+      console.error('Copy failed:', err);
     }
   };
 
@@ -665,9 +668,8 @@ function App() {
             const activeImg = loadedImages.find(i => i.id === (data.activeImageId || loadedImages[0]?.id));
             if (activeImg) fitToScreen(activeImg.img.width, activeImg.img.height);
           }, 100);
-          alert(`Загружено: ${loadedImages.length} изобр., ${loadedImages.reduce((s, i) => s + i.zones.length, 0)} обл., ${loadedImages.reduce((s, i) => s + i.groups.length, 0)} групп`);
-        }).catch(err => alert(`Ошибка: ${err.message}`));
-      } catch { alert('Ошибка чтения'); }
+        }).catch(err => console.error('Import error:', err));
+      } catch (err) { console.error('Parse error:', err); }
     };
     reader.readAsText(file);
     if (projectInputRef.current) projectInputRef.current.value = '';
