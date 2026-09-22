@@ -1,16 +1,24 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 
-// Типы
-interface Point {
-  x: number;
-  y: number;
-}
+// ===== Типы =====
+interface Point { x: number; y: number; }
 
 interface Zone {
   id: string;
   points: Point[];
   category: string;
   label: string;
+  visible: boolean;
+  groupId: string | null;
+}
+
+interface Group {
+  id: string;
+  name: string;
+  zoneIds: string[];
+  pdfUrl: string;
+  tableUrl: string;
+  notes: string;
 }
 
 interface ImageData {
@@ -20,6 +28,7 @@ interface ImageData {
   img: HTMLImageElement;
   canvasSize: { width: number; height: number };
   zones: Zone[];
+  groups: Group[];
 }
 
 interface Category {
@@ -33,25 +42,38 @@ const CATEGORIES: Category[] = [
   { id: 'ceiling', name: 'Потолок', color: '#06B6D4' },
   { id: 'walls', name: 'Стены', color: '#F59E0B' },
   { id: 'partitions', name: 'Перегородки', color: '#10B981' },
-  { id: 'engineering', name: 'Инженерные системы', color: '#EF4444' },
+  { id: 'engineering', name: 'Инж. системы', color: '#EF4444' },
 ];
 
 const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 10;
 
+type Tab = 'canvas' | 'docs';
+
 function App() {
+  // Основные state
   const [images, setImages] = useState<ImageData[]>([]);
   const [activeImageId, setActiveImageId] = useState<string | null>(null);
   const [currentPoints, setCurrentPoints] = useState<Point[]>([]);
   const [activeCategory, setActiveCategory] = useState<string>('floor');
   const [mousePos, setMousePos] = useState<Point | null>(null);
   const [selectedZone, setSelectedZone] = useState<string | null>(null);
+  const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
   const [mode, setMode] = useState<'draw' | 'select'>('draw');
+  const [tab, setTab] = useState<Tab>('canvas');
+
+  // UI state
   const [editingImageName, setEditingImageName] = useState<string | null>(null);
   const [tempName, setTempName] = useState('');
+  const [renamingZoneId, setRenamingZoneId] = useState<string | null>(null);
+  const [renameZoneValue, setRenameZoneValue] = useState('');
+  const [highlightZoneId, setHighlightZoneId] = useState<string | null>(null);
+  const [highlightUntil, setHighlightUntil] = useState<number>(0);
   const [exportModal, setExportModal] = useState<{ data: string; filename: string; type: string } | null>(null);
+  const [editingGroup, setEditingGroup] = useState<Group | null>(null);
+  const [showGroupModal, setShowGroupModal] = useState(false);
 
-  // Zoom/Pan state
+  // Zoom/Pan
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
@@ -67,11 +89,10 @@ function App() {
 
   const activeImage = images.find(img => img.id === activeImageId) || null;
 
-  // Загрузка изображения
+  // ===== Загрузка изображения =====
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
-
     Array.from(files).forEach(file => {
       const reader = new FileReader();
       reader.onload = (event) => {
@@ -80,127 +101,89 @@ function App() {
         img.onload = () => {
           const id = Date.now().toString() + Math.random().toString(36).slice(2);
           const name = file.name.replace(/\.[^/.]+$/, '');
-
           const newImage: ImageData = {
-            id,
-            name,
-            src,
-            img,
+            id, name, src, img,
             canvasSize: { width: img.width, height: img.height },
-            zones: [],
+            zones: [], groups: [],
           };
-
           setImages(prev => [...prev, newImage]);
           setActiveImageId(id);
           setCurrentPoints([]);
           setSelectedZone(null);
-
           setTimeout(() => fitToScreen(img.width, img.height), 50);
         };
         img.src = src;
       };
       reader.readAsDataURL(file);
     });
-
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  // Вписать изображение в экран
+  // ===== Zoom =====
   const fitToScreen = useCallback((imgWidth?: number, imgHeight?: number) => {
     const viewport = viewportRef.current;
     if (!viewport) return;
     const w = imgWidth ?? activeImage?.img.width ?? 0;
     const h = imgHeight ?? activeImage?.img.height ?? 0;
     if (!w || !h) return;
-
     const padding = 40;
     const vw = viewport.clientWidth - padding * 2;
     const vh = viewport.clientHeight - padding * 2;
-
-    const scaleX = vw / w;
-    const scaleY = vh / h;
-    const newZoom = Math.min(scaleX, scaleY, 1);
-
+    const newZoom = Math.min(vw / w, vh / h, 1);
     setZoom(newZoom);
-    setPan({
-      x: (vw - w * newZoom) / 2,
-      y: (vh - h * newZoom) / 2,
-    });
+    setPan({ x: (vw - w * newZoom) / 2, y: (vh - h * newZoom) / 2 });
   }, [activeImage]);
 
-  // Переключение на другое изображение
   const switchImage = (id: string) => {
     setActiveImageId(id);
     setCurrentPoints([]);
     setSelectedZone(null);
     const img = images.find(i => i.id === id);
-    if (img) {
-      setTimeout(() => fitToScreen(img.img.width, img.img.height), 30);
-    }
+    if (img) setTimeout(() => fitToScreen(img.img.width, img.img.height), 30);
   };
 
-  // Получение координат мыши в координатах canvas
   const getCanvasCoords = (e: React.MouseEvent): Point => {
     const viewport = viewportRef.current;
     if (!viewport || !activeImage) return { x: 0, y: 0 };
-
-    const viewportRect = viewport.getBoundingClientRect();
-    const mouseXInViewport = e.clientX - viewportRect.left;
-    const mouseYInViewport = e.clientY - viewportRect.top;
-
-    const x = (mouseXInViewport - pan.x) / zoom;
-    const y = (mouseYInViewport - pan.y) / zoom;
-
-    return { x, y };
+    const rect = viewport.getBoundingClientRect();
+    return {
+      x: (e.clientX - rect.left - pan.x) / zoom,
+      y: (e.clientY - rect.top - pan.y) / zoom,
+    };
   };
 
-  // Wheel — зум к курсору
   const zoomRef = useRef({ zoom: 1, pan: { x: 0, y: 0 } });
   zoomRef.current = { zoom, pan };
 
   useEffect(() => {
     const viewport = viewportRef.current;
     if (!viewport) return;
-
     const handleWheelEvent = (e: WheelEvent) => {
       e.preventDefault();
       if (!activeImage) return;
-
-      const viewportRect = viewport.getBoundingClientRect();
-      const mouseX = e.clientX - viewportRect.left;
-      const mouseY = e.clientY - viewportRect.top;
-
-      const { zoom: currentZoom, pan: currentPan } = zoomRef.current;
-
-      const canvasX = (mouseX - currentPan.x) / currentZoom;
-      const canvasY = (mouseY - currentPan.y) / currentZoom;
-
+      const rect = viewport.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+      const { zoom: cz, pan: cp } = zoomRef.current;
+      const canvasX = (mouseX - cp.x) / cz;
+      const canvasY = (mouseY - cp.y) / cz;
       const delta = -e.deltaY * 0.001;
-      const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, currentZoom * (1 + delta)));
-
-      const newPanX = mouseX - canvasX * newZoom;
-      const newPanY = mouseY - canvasY * newZoom;
-
-      setZoom(newZoom);
-      setPan({ x: newPanX, y: newPanY });
+      const nz = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, cz * (1 + delta)));
+      setZoom(nz);
+      setPan({ x: mouseX - canvasX * nz, y: mouseY - canvasY * nz });
     };
-
     viewport.addEventListener('wheel', handleWheelEvent, { passive: false });
     return () => viewport.removeEventListener('wheel', handleWheelEvent);
   }, [activeImage]);
 
-  // Pan
+  // ===== Pan =====
   const handleMouseDown = (e: React.MouseEvent) => {
     mouseDownPos.current = { x: e.clientX, y: e.clientY };
     setDragDistance(0);
-
     if (e.button === 1 || (spaceHeld && e.button === 0)) {
       e.preventDefault();
       setIsPanning(true);
       setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
-      return;
     }
   };
 
@@ -208,34 +191,27 @@ function App() {
     const dx = e.clientX - mouseDownPos.current.x;
     const dy = e.clientY - mouseDownPos.current.y;
     setDragDistance(Math.sqrt(dx * dx + dy * dy));
-
     if (isPanning) {
-      setPan({
-        x: e.clientX - panStart.x,
-        y: e.clientY - panStart.y,
-      });
+      setPan({ x: e.clientX - panStart.x, y: e.clientY - panStart.y });
       return;
     }
     if (!activeImage) return;
     setMousePos(getCanvasCoords(e));
   };
 
-  const handleMouseUp = () => {
-    setIsPanning(false);
-  };
+  const handleMouseUp = () => setIsPanning(false);
 
-  // Клик по canvas
+  // ===== Клик по canvas =====
   const handleCanvasClick = (e: React.MouseEvent) => {
     if (!activeImage) return;
-    if (isPanning || spaceHeld) return;
-    if (dragDistance > 5) return;
-
+    if (isPanning || spaceHeld || dragDistance > 5) return;
     const point = getCanvasCoords(e);
 
     if (mode === 'select') {
       for (let i = activeImage.zones.length - 1; i >= 0; i--) {
-        if (isPointInPolygon(point, activeImage.zones[i].points)) {
-          setSelectedZone(activeImage.zones[i].id);
+        const z = activeImage.zones[i];
+        if (z.visible && isPointInPolygon(point, z.points)) {
+          setSelectedZone(z.id);
           return;
         }
       }
@@ -243,70 +219,185 @@ function App() {
       return;
     }
 
+    // Замыкание
     if (currentPoints.length >= 3) {
       const firstPoint = currentPoints[0];
       const distance = Math.sqrt(
         Math.pow(point.x - firstPoint.x, 2) + Math.pow(point.y - firstPoint.y, 2)
       );
-      const snapRadius = 15 / zoom;
-      if (distance < snapRadius) {
+      if (distance < 15 / zoom) {
         const newZone: Zone = {
           id: Date.now().toString(),
           points: [...currentPoints],
           category: activeCategory,
           label: `${CATEGORIES.find(c => c.id === activeCategory)?.name} ${activeImage.zones.filter(z => z.category === activeCategory).length + 1}`,
+          visible: true,
+          groupId: null,
         };
-        updateImageZones([...activeImage.zones, newZone]);
+        updateImage({ zones: [...activeImage.zones, newZone] });
         setCurrentPoints([]);
         return;
       }
     }
-
     setCurrentPoints([...currentPoints, point]);
   };
 
-  const updateImageZones = (zones: Zone[]) => {
+  // ===== Обновление данных изображения =====
+  const updateImage = (patch: Partial<ImageData>) => {
     setImages(prev => prev.map(img =>
-      img.id === activeImageId ? { ...img, zones } : img
+      img.id === activeImageId ? { ...img, ...patch } : img
     ));
   };
 
-  const handleContextMenu = (e: React.MouseEvent) => {
-    e.preventDefault();
-    if (currentPoints.length > 0) {
-      setCurrentPoints([]);
-    }
+  const updateZone = (zoneId: string, patch: Partial<Zone>) => {
+    if (!activeImage) return;
+    updateImage({
+      zones: activeImage.zones.map(z => z.id === zoneId ? { ...z, ...patch } : z),
+    });
   };
 
-  // Горячие клавиши
+  const deleteZone = (zoneId: string) => {
+    if (!activeImage) return;
+    const zone = activeImage.zones.find(z => z.id === zoneId);
+    updateImage({
+      zones: activeImage.zones.filter(z => z.id !== zoneId),
+      groups: zone?.groupId
+        ? activeImage.groups.map(g =>
+            g.id === zone.groupId
+              ? { ...g, zoneIds: g.zoneIds.filter(id => id !== zoneId) }
+              : g
+          )
+        : activeImage.groups,
+    });
+    if (selectedZone === zoneId) setSelectedZone(null);
+  };
+
+  // ===== Группы =====
+  const createGroup = () => {
+    if (!activeImage) return;
+    const newGroup: Group = {
+      id: Date.now().toString(),
+      name: `Группа ${activeImage.groups.length + 1}`,
+      zoneIds: [],
+      pdfUrl: '',
+      tableUrl: '',
+      notes: '',
+    };
+    updateImage({ groups: [...activeImage.groups, newGroup] });
+    setEditingGroup(newGroup);
+    setShowGroupModal(true);
+  };
+
+  const updateGroup = (groupId: string, patch: Partial<Group>) => {
+    if (!activeImage) return;
+    updateImage({
+      groups: activeImage.groups.map(g => g.id === groupId ? { ...g, ...patch } : g),
+    });
+  };
+
+  const deleteGroup = (groupId: string) => {
+    if (!activeImage) return;
+    updateImage({
+      groups: activeImage.groups.filter(g => g.id !== groupId),
+      zones: activeImage.zones.map(z =>
+        z.groupId === groupId ? { ...z, groupId: null } : z
+      ),
+    });
+    if (selectedGroup === groupId) setSelectedGroup(null);
+  };
+
+  const assignZoneToGroup = (zoneId: string, groupId: string | null) => {
+    if (!activeImage) return;
+    const zone = activeImage.zones.find(z => z.id === zoneId);
+    if (!zone) return;
+
+    let newGroups = activeImage.groups;
+    // Убираем зону из старой группы
+    if (zone.groupId) {
+      newGroups = newGroups.map(g =>
+        g.id === zone.groupId ? { ...g, zoneIds: g.zoneIds.filter(id => id !== zoneId) } : g
+      );
+    }
+    // Добавляем в новую
+    if (groupId) {
+      newGroups = newGroups.map(g =>
+        g.id === groupId && !g.zoneIds.includes(zoneId)
+          ? { ...g, zoneIds: [...g.zoneIds, zoneId] }
+          : g
+      );
+    }
+    updateImage({
+      zones: activeImage.zones.map(z => z.id === zoneId ? { ...z, groupId } : z),
+      groups: newGroups,
+    });
+  };
+
+  const toggleZoneInGroup = (groupId: string, zoneId: string) => {
+    if (!activeImage) return;
+    const group = activeImage.groups.find(g => g.id === groupId);
+    if (!group) return;
+    const isIn = group.zoneIds.includes(zoneId);
+    const newZoneIds = isIn
+      ? group.zoneIds.filter(id => id !== zoneId)
+      : [...group.zoneIds, zoneId];
+    updateGroup(groupId, { zoneIds: newZoneIds });
+    updateImage({
+      zones: activeImage.zones.map(z =>
+        z.id === zoneId ? { ...z, groupId: isIn ? null : groupId } : z
+      ),
+    });
+  };
+
+  // ===== Переход к области из вкладки документов =====
+  const goToZone = (zoneId: string) => {
+    setTab('canvas');
+    setMode('select');
+    setSelectedZone(zoneId);
+    setHighlightZoneId(zoneId);
+    setHighlightUntil(Date.now() + 3000);
+  };
+
+  const goToGroup = (groupId: string) => {
+    if (!activeImage) return;
+    const group = activeImage.groups.find(g => g.id === groupId);
+    if (!group || group.zoneIds.length === 0) return;
+    setTab('canvas');
+    setMode('select');
+    setSelectedGroup(groupId);
+    setHighlightZoneId(groupId);
+    setHighlightUntil(Date.now() + 3000);
+  };
+
+  // Эффект сброса подсветки
+  useEffect(() => {
+    if (!highlightZoneId) return;
+    const timer = setTimeout(() => {
+      setHighlightZoneId(null);
+      setSelectedGroup(null);
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [highlightZoneId]);
+
+  // ===== Горячие клавиши =====
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (editingImageName) return;
-
-      if (e.key === ' ') {
-        e.preventDefault();
-        setSpaceHeld(true);
-      }
+      if (editingImageName || renamingZoneId || showGroupModal) return;
+      if (e.key === ' ') { e.preventDefault(); setSpaceHeld(true); }
       if (e.key === 'Escape') {
-        if (currentPoints.length > 0) {
-          setCurrentPoints([]);
-        } else {
-          setSelectedZone(null);
-        }
+        if (currentPoints.length > 0) setCurrentPoints([]);
+        else { setSelectedZone(null); setSelectedGroup(null); }
       }
       if (e.key === 'Delete' && selectedZone && activeImage) {
-        updateImageZones(activeImage.zones.filter(z => z.id !== selectedZone));
-        setSelectedZone(null);
+        deleteZone(selectedZone);
       }
-      if ((e.key === 'v' || e.key === 'V') && !e.ctrlKey && !e.metaKey) {
-        setMode('select');
-        setCurrentPoints([]);
+      if ((e.key === 'v' || e.key === 'V') && !e.ctrlKey && !e.metaKey && tab === 'canvas') {
+        setMode('select'); setCurrentPoints([]);
       }
-      if ((e.key === 'd' || e.key === 'D') && !e.ctrlKey && !e.metaKey) {
+      if ((e.key === 'd' || e.key === 'D') && !e.ctrlKey && !e.metaKey && tab === 'canvas') {
         setMode('draw');
       }
       const num = parseInt(e.key);
-      if (num >= 1 && num <= 5) {
+      if (num >= 1 && num <= 5 && tab === 'canvas') {
         setActiveCategory(CATEGORIES[num - 1].id);
         setMode('draw');
       }
@@ -316,10 +407,7 @@ function App() {
       }
     };
     const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.key === ' ') {
-        setSpaceHeld(false);
-        setIsPanning(false);
-      }
+      if (e.key === ' ') { setSpaceHeld(false); setIsPanning(false); }
     };
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
@@ -327,9 +415,9 @@ function App() {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [selectedZone, activeImage, currentPoints, editingImageName, fitToScreen]);
+  }, [selectedZone, activeImage, currentPoints, editingImageName, renamingZoneId, showGroupModal, tab, fitToScreen]);
 
-  // Отрисовка canvas
+  // ===== Отрисовка canvas =====
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !activeImage) return;
@@ -338,16 +426,27 @@ function App() {
 
     canvas.width = activeImage.canvasSize.width;
     canvas.height = activeImage.canvasSize.height;
-
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(activeImage.img, 0, 0, canvas.width, canvas.height);
 
+    const now = Date.now();
+    const isHighlighting = highlightUntil > now;
+    const pulse = isHighlighting ? 0.5 + 0.5 * Math.sin(now / 150) : 0;
+
     // Зоны
     activeImage.zones.forEach((zone) => {
+      if (!zone.visible) return;
       const category = CATEGORIES.find(c => c.id === zone.category);
       if (!category) return;
+
+      const isZoneSelected = zone.id === selectedZone;
+      const isGroupSelected = zone.groupId === selectedGroup;
+      const isHighlighted = isHighlighting && (
+        zone.id === highlightZoneId ||
+        (activeImage.groups.find(g => g.id === highlightZoneId)?.zoneIds.includes(zone.id))
+      );
 
       ctx.beginPath();
       ctx.moveTo(zone.points[0].x, zone.points[0].y);
@@ -356,16 +455,21 @@ function App() {
       }
       ctx.closePath();
 
-      const isSelected = zone.id === selectedZone;
-      ctx.fillStyle = category.color + (isSelected ? '55' : '25');
+      let fillAlpha = '25';
+      if (isZoneSelected || isGroupSelected) fillAlpha = '55';
+      if (isHighlighted) fillAlpha = '80';
+
+      ctx.fillStyle = category.color + fillAlpha;
       ctx.fill();
+
       ctx.strokeStyle = category.color;
-      ctx.lineWidth = (isSelected ? 3 : 1.5) / zoom;
+      ctx.lineWidth = ((isZoneSelected || isGroupSelected || isHighlighted) ? 3 : 1.5) / zoom;
       ctx.setLineDash([]);
       ctx.stroke();
 
-      const centerX = zone.points.reduce((sum, p) => sum + p.x, 0) / zone.points.length;
-      const centerY = zone.points.reduce((sum, p) => sum + p.y, 0) / zone.points.length;
+      // Метка
+      const centerX = zone.points.reduce((s, p) => s + p.x, 0) / zone.points.length;
+      const centerY = zone.points.reduce((s, p) => s + p.y, 0) / zone.points.length;
       const fontSize = Math.max(10, 12 / zoom);
       ctx.font = `bold ${fontSize}px sans-serif`;
       ctx.textAlign = 'center';
@@ -375,6 +479,21 @@ function App() {
       ctx.strokeText(zone.label, centerX, centerY);
       ctx.fillStyle = '#ffffff';
       ctx.fillText(zone.label, centerX, centerY);
+
+      // Эффект подсветки
+      if (isHighlighted) {
+        ctx.beginPath();
+        ctx.moveTo(zone.points[0].x, zone.points[0].y);
+        for (let i = 1; i < zone.points.length; i++) {
+          ctx.lineTo(zone.points[i].x, zone.points[i].y);
+        }
+        ctx.closePath();
+        ctx.strokeStyle = `rgba(255, 255, 0, ${0.5 + pulse * 0.5})`;
+        ctx.lineWidth = (4 + pulse * 2) / zoom;
+        ctx.setLineDash([8 / zoom, 4 / zoom]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
     });
 
     // Текущий полигон
@@ -402,7 +521,6 @@ function App() {
         }
         ctx.strokeStyle = category.color;
         ctx.lineWidth = 2 / zoom;
-        ctx.setLineDash([]);
         ctx.stroke();
       }
 
@@ -415,23 +533,11 @@ function App() {
         ctx.setLineDash([6 / zoom, 4 / zoom]);
         ctx.stroke();
         ctx.setLineDash([]);
-
-        if (currentPoints.length >= 3) {
-          ctx.beginPath();
-          ctx.moveTo(mousePos.x, mousePos.y);
-          ctx.lineTo(currentPoints[0].x, currentPoints[0].y);
-          ctx.strokeStyle = category.color + '60';
-          ctx.lineWidth = 1 / zoom;
-          ctx.setLineDash([4 / zoom, 4 / zoom]);
-          ctx.stroke();
-          ctx.setLineDash([]);
-        }
       }
 
       currentPoints.forEach((point, index) => {
         const isFirst = index === 0 && currentPoints.length >= 3;
         const radius = (isFirst ? 8 : 5) / zoom;
-
         ctx.beginPath();
         ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
         ctx.fillStyle = isFirst ? '#ffffff' : category.color;
@@ -439,232 +545,37 @@ function App() {
         ctx.strokeStyle = isFirst ? category.color : '#ffffff';
         ctx.lineWidth = 2 / zoom;
         ctx.stroke();
-
-        if (isFirst) {
-          ctx.beginPath();
-          ctx.arc(point.x, point.y, radius * 1.5, 0, Math.PI * 2);
-          ctx.strokeStyle = category.color + '80';
-          ctx.lineWidth = 2 / zoom;
-          ctx.stroke();
-        }
       });
+    }
 
-      if (mousePos && currentPoints.length >= 3) {
-        const firstPoint = currentPoints[0];
-        const distance = Math.sqrt(
-          Math.pow(mousePos.x - firstPoint.x, 2) + Math.pow(mousePos.y - firstPoint.y, 2)
-        );
-        const snapRadius = 15 / zoom;
-        if (distance < snapRadius) {
-          ctx.beginPath();
-          ctx.arc(firstPoint.x, firstPoint.y, snapRadius, 0, Math.PI * 2);
-          ctx.strokeStyle = '#ffffff';
-          ctx.lineWidth = 2 / zoom;
-          ctx.setLineDash([4 / zoom, 4 / zoom]);
-          ctx.stroke();
-          ctx.setLineDash([]);
+    // Анимация подсветки
+    if (isHighlighting) {
+      requestAnimationFrame(() => {
+        const canvas = canvasRef.current;
+        if (canvas) canvas.dispatchEvent(new Event('redraw'));
+      });
+    }
+  }, [activeImage, currentPoints, mousePos, activeCategory, selectedZone, selectedGroup, mode, zoom, highlightZoneId, highlightUntil]);
+
+  // Триггер перерисовки для анимации
+  useEffect(() => {
+    if (!highlightZoneId) return;
+    let raf: number;
+    const loop = () => {
+      if (Date.now() < highlightUntil) {
+        const canvas = canvasRef.current;
+        if (canvas && activeImage) {
+          const evt = new Event('redraw');
+          canvas.dispatchEvent(evt);
         }
-      }
-    }
-  }, [activeImage, currentPoints, mousePos, activeCategory, selectedZone, mode, zoom]);
-
-  const deleteZone = (zoneId: string) => {
-    if (!activeImage) return;
-    updateImageZones(activeImage.zones.filter(z => z.id !== zoneId));
-    if (selectedZone === zoneId) setSelectedZone(null);
-  };
-
-  const clearAllZones = () => {
-    if (!activeImage) return;
-    if (window.confirm('Удалить все выделенные области на этом изображении?')) {
-      updateImageZones([]);
-      setCurrentPoints([]);
-      setSelectedZone(null);
-    }
-  };
-
-  // Экспорт только зон
-  const exportData = () => {
-    const data = {
-      images: images.map(img => ({
-        name: img.name,
-        zones: img.zones.map(z => ({
-          label: z.label,
-          categoryId: z.category,
-          categoryName: CATEGORIES.find(c => c.id === z.category)?.name,
-          points: z.points,
-        })),
-      })),
-    };
-    setExportModal({
-      data: JSON.stringify(data, null, 2),
-      filename: 'zones-export.json',
-      type: 'zones'
-    });
-  };
-
-  // Экспорт полного проекта
-  const exportProject = () => {
-    const projectData = {
-      version: '1.0',
-      exportedAt: new Date().toISOString(),
-      activeImageId: activeImageId,
-      images: images.map(img => ({
-        id: img.id,
-        name: img.name,
-        src: img.src,
-        width: img.canvasSize.width,
-        height: img.canvasSize.height,
-        zones: img.zones.map(z => ({
-          id: z.id,
-          label: z.label,
-          category: z.category,
-          points: z.points,
-        })),
-      })),
-    };
-    const date = new Date().toISOString().slice(0, 10);
-    setExportModal({
-      data: JSON.stringify(projectData),
-      filename: `project-${date}.zoneproj`,
-      type: 'project'
-    });
-  };
-
-  const downloadFromModal = () => {
-    if (!exportModal) return;
-    const blob = new Blob([exportModal.data], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = exportModal.filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  };
-
-  const openInNewTab = () => {
-    if (!exportModal) return;
-    const blob = new Blob([exportModal.data], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    window.open(url, '_blank');
-  };
-
-  const copyToClipboard = async () => {
-    if (!exportModal) return;
-    try {
-      await navigator.clipboard.writeText(exportModal.data);
-      alert('Скопировано в буфер обмена!');
-    } catch {
-      const textarea = document.createElement('textarea');
-      textarea.value = exportModal.data;
-      document.body.appendChild(textarea);
-      textarea.select();
-      document.execCommand('copy');
-      document.body.removeChild(textarea);
-      alert('Скопировано в буфер обмена!');
-    }
-  };
-
-  // Импорт проекта
-  const importProject = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const data = JSON.parse(event.target?.result as string);
-
-        if (!data.images || !Array.isArray(data.images)) {
-          alert('Неверный формат файла проекта');
-          return;
-        }
-
-        const loadPromises = data.images.map((imgData: any) => {
-          return new Promise<ImageData>((resolve, reject) => {
-            const img = new Image();
-            img.onload = () => {
-              resolve({
-                id: imgData.id || Date.now().toString() + Math.random().toString(36).slice(2),
-                name: imgData.name || 'Без имени',
-                src: imgData.src,
-                img,
-                canvasSize: {
-                  width: imgData.width || img.width,
-                  height: imgData.height || img.height,
-                },
-                zones: (imgData.zones || []).map((z: any) => ({
-                  id: z.id || Date.now().toString() + Math.random().toString(36).slice(2),
-                  label: z.label || 'Область',
-                  category: z.category || 'floor',
-                  points: z.points || [],
-                })),
-              });
-            };
-            img.onerror = () => reject(new Error(`Не удалось загрузить: ${imgData.name}`));
-            img.src = imgData.src;
-          });
-        });
-
-        Promise.all(loadPromises)
-          .then(loadedImages => {
-            setImages(loadedImages);
-            if (data.activeImageId && loadedImages.find(i => i.id === data.activeImageId)) {
-              setActiveImageId(data.activeImageId);
-            } else if (loadedImages.length > 0) {
-              setActiveImageId(loadedImages[0].id);
-            }
-            setCurrentPoints([]);
-            setSelectedZone(null);
-
-            setTimeout(() => {
-              const activeImg = loadedImages.find(i => i.id === (data.activeImageId || loadedImages[0]?.id));
-              if (activeImg) {
-                fitToScreen(activeImg.img.width, activeImg.img.height);
-              }
-            }, 100);
-
-            alert(`Проект загружен: ${loadedImages.length} изобр., ${loadedImages.reduce((sum, i) => sum + i.zones.length, 0)} областей`);
-          })
-          .catch(err => {
-            alert(`Ошибка: ${err.message}`);
-          });
-      } catch {
-        alert('Ошибка чтения файла');
+        raf = requestAnimationFrame(loop);
       }
     };
-    reader.readAsText(file);
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [highlightZoneId, highlightUntil, activeImage]);
 
-    if (projectInputRef.current) {
-      projectInputRef.current.value = '';
-    }
-  };
-
-  const deleteImage = (id: string) => {
-    setImages(prev => prev.filter(img => img.id !== id));
-    if (activeImageId === id) {
-      const remaining = images.filter(img => img.id !== id);
-      setActiveImageId(remaining.length > 0 ? remaining[0].id : null);
-    }
-  };
-
-  const startRename = (id: string, currentName: string) => {
-    setEditingImageName(id);
-    setTempName(currentName);
-  };
-
-  const confirmRename = () => {
-    if (editingImageName && tempName.trim()) {
-      setImages(prev => prev.map(img =>
-        img.id === editingImageName ? { ...img, name: tempName.trim() } : img
-      ));
-    }
-    setEditingImageName(null);
-    setTempName('');
-  };
-
+  // ===== Утилиты =====
   const isPointInPolygon = (point: Point, polygon: Point[]): boolean => {
     let inside = false;
     for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
@@ -677,127 +588,257 @@ function App() {
     return inside;
   };
 
+  const clearAllZones = () => {
+    if (!activeImage) return;
+    if (window.confirm('Удалить все области на этом изображении?')) {
+      updateImage({ zones: [], groups: [] });
+      setCurrentPoints([]);
+      setSelectedZone(null);
+    }
+  };
+
+  // ===== Экспорт/Импорт =====
+  const exportData = () => {
+    const data = {
+      images: images.map(img => ({
+        name: img.name,
+        zones: img.zones.map(z => ({
+          label: z.label, categoryId: z.category,
+          categoryName: CATEGORIES.find(c => c.id === z.category)?.name,
+          visible: z.visible, groupId: z.groupId, points: z.points,
+        })),
+        groups: img.groups,
+      })),
+    };
+    setExportModal({
+       JSON.stringify(data, null, 2),
+      filename: 'zones-export.json', type: 'zones',
+    });
+  };
+
+  const exportProject = () => {
+    const projectData = {
+      version: '2.0',
+      exportedAt: new Date().toISOString(),
+      activeImageId,
+      images: images.map(img => ({
+        id: img.id, name: img.name, src: img.src,
+        width: img.canvasSize.width, height: img.canvasSize.height,
+        zones: img.zones, groups: img.groups,
+      })),
+    };
+    const date = new Date().toISOString().slice(0, 10);
+    setExportModal({
+       JSON.stringify(projectData),
+      filename: `project-${date}.zoneproj`, type: 'project',
+    });
+  };
+
+  const downloadFromModal = () => {
+    if (!exportModal) return;
+    const blob = new Blob([exportModal.data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = exportModal.filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const openInNewTab = () => {
+    if (!exportModal) return;
+    const blob = new Blob([exportModal.data], { type: 'application/json' });
+    window.open(URL.createObjectURL(blob), '_blank');
+  };
+
+  const copyToClipboard = async () => {
+    if (!exportModal) return;
+    try {
+      await navigator.clipboard.writeText(exportModal.data);
+      alert('Скопировано!');
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = exportModal.data;
+      document.body.appendChild(ta); ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      alert('Скопировано!');
+    }
+  };
+
+  const importProject = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const data = JSON.parse(event.target?.result as string);
+        if (!data.images || !Array.isArray(data.images)) {
+          alert('Неверный формат'); return;
+        }
+        Promise.all(data.images.map((imgData: any) => new Promise<ImageData>((resolve, reject) => {
+          const img = new Image();
+          img.onload = () => resolve({
+            id: imgData.id || Date.now().toString() + Math.random().toString(36).slice(2),
+            name: imgData.name || 'Без имени',
+            src: imgData.src, img,
+            canvasSize: { width: imgData.width || img.width, height: imgData.height || img.height },
+            zones: (imgData.zones || []).map((z: any) => ({
+              id: z.id || Date.now().toString() + Math.random().toString(36).slice(2),
+              label: z.label || 'Область',
+              category: z.category || 'floor',
+              points: z.points || [],
+              visible: z.visible !== false,
+              groupId: z.groupId || null,
+            })),
+            groups: (imgData.groups || []).map((g: any) => ({
+              id: g.id || Date.now().toString() + Math.random().toString(36).slice(2),
+              name: g.name || 'Группа',
+              zoneIds: g.zoneIds || [],
+              pdfUrl: g.pdfUrl || '',
+              tableUrl: g.tableUrl || '',
+              notes: g.notes || '',
+            })),
+          });
+          img.onerror = () => reject(new Error(`Ошибка: ${imgData.name}`));
+          img.src = imgData.src;
+        }))).then(loadedImages => {
+          setImages(loadedImages);
+          if (data.activeImageId && loadedImages.find(i => i.id === data.activeImageId)) {
+            setActiveImageId(data.activeImageId);
+          } else if (loadedImages.length > 0) {
+            setActiveImageId(loadedImages[0].id);
+          }
+          setCurrentPoints([]);
+          setSelectedZone(null);
+          setTimeout(() => {
+            const activeImg = loadedImages.find(i => i.id === (data.activeImageId || loadedImages[0]?.id));
+            if (activeImg) fitToScreen(activeImg.img.width, activeImg.img.height);
+          }, 100);
+          alert(`Загружено: ${loadedImages.length} изобр., ${loadedImages.reduce((s, i) => s + i.zones.length, 0)} обл., ${loadedImages.reduce((s, i) => s + i.groups.length, 0)} групп`);
+        }).catch(err => alert(`Ошибка: ${err.message}`));
+      } catch { alert('Ошибка чтения'); }
+    };
+    reader.readAsText(file);
+    if (projectInputRef.current) projectInputRef.current.value = '';
+  };
+
+  const deleteImage = (id: string) => {
+    setImages(prev => prev.filter(img => img.id !== id));
+    if (activeImageId === id) {
+      const remaining = images.filter(img => img.id !== id);
+      setActiveImageId(remaining.length > 0 ? remaining[0].id : null);
+    }
+  };
+
+  const startRename = (id: string, currentName: string) => {
+    setEditingImageName(id); setTempName(currentName);
+  };
+
+  const confirmRename = () => {
+    if (editingImageName && tempName.trim()) {
+      setImages(prev => prev.map(img =>
+        img.id === editingImageName ? { ...img, name: tempName.trim() } : img
+      ));
+    }
+    setEditingImageName(null); setTempName('');
+  };
+
+  const startRenameZone = (zoneId: string, currentLabel: string) => {
+    setRenamingZoneId(zoneId);
+    setRenameZoneValue(currentLabel);
+  };
+
+  const confirmRenameZone = () => {
+    if (renamingZoneId && renameZoneValue.trim()) {
+      updateZone(renamingZoneId, { label: renameZoneValue.trim() });
+    }
+    setRenamingZoneId(null); setRenameZoneValue('');
+  };
+
   const zoomIn = () => {
     const viewport = viewportRef.current;
     if (!viewport) return;
     const rect = viewport.getBoundingClientRect();
-    const centerX = rect.width / 2;
-    const centerY = rect.height / 2;
-    const canvasX = (centerX - pan.x) / zoom;
-    const canvasY = (centerY - pan.y) / zoom;
-    const newZoom = Math.min(MAX_ZOOM, zoom * 1.25);
-    setZoom(newZoom);
-    setPan({ x: centerX - canvasX * newZoom, y: centerY - canvasY * newZoom });
+    const cx = rect.width / 2, cy = rect.height / 2;
+    const canvasX = (cx - pan.x) / zoom, canvasY = (cy - pan.y) / zoom;
+    const nz = Math.min(MAX_ZOOM, zoom * 1.25);
+    setZoom(nz); setPan({ x: cx - canvasX * nz, y: cy - canvasY * nz });
   };
 
   const zoomOut = () => {
     const viewport = viewportRef.current;
     if (!viewport) return;
     const rect = viewport.getBoundingClientRect();
-    const centerX = rect.width / 2;
-    const centerY = rect.height / 2;
-    const canvasX = (centerX - pan.x) / zoom;
-    const canvasY = (centerY - pan.y) / zoom;
-    const newZoom = Math.max(MIN_ZOOM, zoom / 1.25);
-    setZoom(newZoom);
-    setPan({ x: centerX - canvasX * newZoom, y: centerY - canvasY * newZoom });
-  };
-
-  const resetZoom = () => {
-    setZoom(1);
-    setPan({ x: 0, y: 0 });
+    const cx = rect.width / 2, cy = rect.height / 2;
+    const canvasX = (cx - pan.x) / zoom, canvasY = (cy - pan.y) / zoom;
+    const nz = Math.max(MIN_ZOOM, zoom / 1.25);
+    setZoom(nz); setPan({ x: cx - canvasX * nz, y: cy - canvasY * nz });
   };
 
   const zoomPercent = Math.round(zoom * 100);
 
+  // ===== Рендер =====
   return (
     <div className="h-screen flex flex-col bg-gray-900 text-white overflow-hidden">
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        multiple
-        onChange={handleImageUpload}
-        className="hidden"
-      />
-      <input
-        ref={projectInputRef}
-        type="file"
-        accept=".zoneproj,.json"
-        onChange={importProject}
-        className="hidden"
-      />
+      <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleImageUpload} className="hidden" />
+      <input ref={projectInputRef} type="file" accept=".zoneproj,.json" onChange={importProject} className="hidden" />
 
       {/* Header */}
       <header className="bg-gray-800/95 backdrop-blur-sm border-b border-gray-700 px-4 py-2 flex items-center justify-between shrink-0 z-20">
         <div className="flex items-center gap-3">
           <div className="text-xl">🏗️</div>
           <h1 className="text-lg font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-            Зонирование
+            Исполнительная документация
           </h1>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
-          >
-            <span>📁</span>
-            <span>Загрузить</span>
+          {/* Вкладки */}
+          <div className="flex bg-gray-700 rounded-lg p-0.5">
+            <button
+              onClick={() => setTab('canvas')}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                tab === 'canvas' ? 'bg-blue-600 text-white shadow' : 'text-gray-300 hover:text-white'
+              }`}
+            >
+              🗺️ Области
+            </button>
+            <button
+              onClick={() => setTab('docs')}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                tab === 'docs' ? 'bg-blue-600 text-white shadow' : 'text-gray-300 hover:text-white'
+              }`}
+            >
+              📑 Документы
+            </button>
+          </div>
+
+          <button onClick={() => fileInputRef.current?.click()} className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded-lg text-xs font-medium transition-colors">
+            📁 Загрузить
           </button>
 
-          {activeImage && (
+          {images.length > 0 && (
             <>
-              <div className="flex bg-gray-700 rounded-lg p-0.5 mx-1">
-                <button
-                  onClick={() => setMode('draw')}
-                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                    mode === 'draw' ? 'bg-blue-600 text-white shadow' : 'text-gray-300 hover:text-white'
-                  }`}
-                >
-                  ✏️ Рисование
-                </button>
-                <button
-                  onClick={() => {
-                    setMode('select');
-                    setCurrentPoints([]);
-                  }}
-                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                    mode === 'select' ? 'bg-blue-600 text-white shadow' : 'text-gray-300 hover:text-white'
-                  }`}
-                >
-                  👆 Выбор
-                </button>
-              </div>
+              <button onClick={exportProject} className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 rounded-lg text-xs font-medium transition-colors">📦 Сохранить</button>
+              <button onClick={() => projectInputRef.current?.click()} className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-xs font-medium transition-colors">📂 Открыть</button>
+            </>
+          )}
 
+          {activeImage && tab === 'canvas' && (
+            <>
+              <div className="flex bg-gray-700 rounded-lg p-0.5">
+                <button onClick={() => setMode('draw')} className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${mode === 'draw' ? 'bg-blue-600 text-white shadow' : 'text-gray-300 hover:text-white'}`}>✏️ Рисование</button>
+                <button onClick={() => { setMode('select'); setCurrentPoints([]); }} className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${mode === 'select' ? 'bg-blue-600 text-white shadow' : 'text-gray-300 hover:text-white'}`}>👆 Выбор</button>
+              </div>
               <div className="flex items-center bg-gray-700/50 rounded-lg p-0.5 gap-0.5">
-                <button onClick={zoomOut} className="px-2 py-1.5 text-xs text-gray-300 hover:text-white hover:bg-gray-600 rounded transition-colors" title="Уменьшить">−</button>
-                <button onClick={resetZoom} className="px-2 py-1.5 text-xs text-gray-300 hover:text-white hover:bg-gray-600 rounded transition-colors min-w-[48px] text-center font-mono" title="Сбросить">{zoomPercent}%</button>
-                <button onClick={zoomIn} className="px-2 py-1.5 text-xs text-gray-300 hover:text-white hover:bg-gray-600 rounded transition-colors" title="Увеличить">+</button>
+                <button onClick={zoomOut} className="px-2 py-1.5 text-xs text-gray-300 hover:text-white hover:bg-gray-600 rounded">−</button>
+                <button onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }} className="px-2 py-1.5 text-xs text-gray-300 hover:text-white hover:bg-gray-600 rounded min-w-[48px] text-center font-mono">{zoomPercent}%</button>
+                <button onClick={zoomIn} className="px-2 py-1.5 text-xs text-gray-300 hover:text-white hover:bg-gray-600 rounded">+</button>
                 <div className="w-px h-4 bg-gray-600 mx-0.5"></div>
-                <button onClick={() => activeImage && fitToScreen(activeImage.img.width, activeImage.img.height)} className="px-2 py-1.5 text-xs text-gray-300 hover:text-white hover:bg-gray-600 rounded transition-colors" title="Вписать">⊡</button>
+                <button onClick={() => activeImage && fitToScreen(activeImage.img.width, activeImage.img.height)} className="px-2 py-1.5 text-xs text-gray-300 hover:text-white hover:bg-gray-600 rounded" title="Вписать">⊡</button>
               </div>
-
-              <div className="flex items-center gap-1 mx-1">
-                <button
-                  onClick={exportProject}
-                  disabled={images.length === 0}
-                  className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 disabled:text-gray-500 rounded-lg text-xs font-medium transition-colors"
-                  title="Сохранить проект"
-                >
-                  📦 Сохранить
-                </button>
-                <button
-                  onClick={() => projectInputRef.current?.click()}
-                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-xs font-medium transition-colors"
-                  title="Загрузить проект"
-                >
-                  📂 Открыть
-                </button>
-              </div>
-
               {activeImage.zones.length > 0 && (
                 <>
-                  <button onClick={exportData} className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-xs font-medium transition-colors" title="Экспорт зон">💾 Экспорт зон</button>
+                  <button onClick={exportData} className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-xs font-medium transition-colors">💾 Экспорт</button>
                   <button onClick={clearAllZones} className="px-3 py-1.5 bg-red-600/80 hover:bg-red-700 rounded-lg text-xs font-medium transition-colors">🗑️ Очистить</button>
                 </>
               )}
@@ -809,13 +850,14 @@ function App() {
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
         <aside className="w-64 bg-gray-800/95 border-r border-gray-700 flex flex-col shrink-0 overflow-hidden z-10">
+          {/* Изображения */}
           <div className="p-3 border-b border-gray-700">
             <div className="flex items-center justify-between mb-2">
               <h2 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Изображения ({images.length})</h2>
-              <button onClick={() => fileInputRef.current?.click()} className="text-[10px] text-blue-400 hover:text-blue-300 transition-colors">+ Добавить</button>
+              <button onClick={() => fileInputRef.current?.click()} className="text-[10px] text-blue-400 hover:text-blue-300">+ Добавить</button>
             </div>
-            <div className="space-y-1 max-h-52 overflow-y-auto">
-              {images.length === 0 && <p className="text-gray-600 text-xs italic py-2">Нет загруженных изображений</p>}
+            <div className="space-y-1 max-h-40 overflow-y-auto">
+              {images.length === 0 && <p className="text-gray-600 text-xs italic py-2">Нет изображений</p>}
               {images.map((img) => (
                 <div
                   key={img.id}
@@ -824,14 +866,13 @@ function App() {
                     activeImageId === img.id ? 'bg-blue-600/20 ring-1 ring-blue-500/40' : 'hover:bg-white/5'
                   }`}
                 >
-                  <div className="w-8 h-8 rounded bg-gray-700 overflow-hidden shrink-0 flex items-center justify-center">
+                  <div className="w-8 h-8 rounded bg-gray-700 overflow-hidden shrink-0">
                     <img src={img.src} alt="" className="w-full h-full object-cover" />
                   </div>
                   <div className="flex-1 min-w-0">
                     {editingImageName === img.id ? (
                       <input
-                        type="text"
-                        value={tempName}
+                        type="text" value={tempName}
                         onChange={(e) => setTempName(e.target.value)}
                         onBlur={confirmRename}
                         onKeyDown={(e) => {
@@ -846,174 +887,445 @@ function App() {
                     ) : (
                       <div className="flex items-center gap-1">
                         <span className="text-xs font-medium truncate">{img.name}</span>
-                        <button onClick={(e) => { e.stopPropagation(); startRename(img.id, img.name); }} className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-blue-400 transition-all text-[10px]" title="Переименовать">✎</button>
+                        <button onClick={(e) => { e.stopPropagation(); startRename(img.id, img.name); }} className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-blue-400 text-[10px]">✎</button>
                       </div>
                     )}
-                    <span className="text-[10px] text-gray-500">{img.zones.length} обл.</span>
+                    <span className="text-[10px] text-gray-500">{img.zones.length} обл. · {img.groups.length} гр.</span>
                   </div>
-                  <button onClick={(e) => { e.stopPropagation(); deleteImage(img.id); }} className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-red-400 transition-all text-xs p-1" title="Удалить">✕</button>
+                  <button onClick={(e) => { e.stopPropagation(); deleteImage(img.id); }} className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-red-400 text-xs p-1">✕</button>
                 </div>
               ))}
             </div>
           </div>
 
-          <div className="p-3 border-b border-gray-700">
-            <h2 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">Категории</h2>
-            <div className="space-y-1">
-              {CATEGORIES.map((cat, index) => (
-                <button
-                  key={cat.id}
-                  onClick={() => {
-                    setActiveCategory(cat.id);
-                    setMode('draw');
-                    if (currentPoints.length > 0) setCurrentPoints([]);
-                  }}
-                  className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg transition-all text-left ${
-                    activeCategory === cat.id ? 'bg-white/10' : 'hover:bg-white/5'
-                  }`}
-                >
-                  <span className="w-3.5 h-3.5 rounded-sm shrink-0" style={{ backgroundColor: cat.color }}></span>
-                  <span className="text-xs font-medium flex-1">{cat.name}</span>
-                  <span className="text-[10px] text-gray-500 bg-gray-700/50 px-1.5 py-0.5 rounded">{index + 1}</span>
-                  <span className="text-[10px] font-bold text-gray-400 min-w-[16px] text-center">
-                    {activeImage ? activeImage.zones.filter(z => z.category === cat.id).length : 0}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-3">
-            <h2 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">
-              Области ({activeImage ? activeImage.zones.length : 0})
-            </h2>
-            {!activeImage ? (
-              <p className="text-gray-600 text-xs italic">Загрузите изображение</p>
-            ) : activeImage.zones.length === 0 ? (
-              <p className="text-gray-600 text-xs italic">Нет выделенных областей</p>
-            ) : (
-              <div className="space-y-1">
-                {activeImage.zones.map((zone) => {
-                  const category = CATEGORIES.find(c => c.id === zone.category);
-                  return (
-                    <div
-                      key={zone.id}
-                      onClick={() => { setSelectedZone(zone.id); setMode('select'); }}
-                      className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg cursor-pointer transition-all group ${
-                        selectedZone === zone.id ? 'bg-white/10 ring-1 ring-white/20' : 'hover:bg-white/5'
+          {tab === 'canvas' && activeImage && (
+            <>
+              {/* Категории */}
+              <div className="p-3 border-b border-gray-700">
+                <h2 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">Категории</h2>
+                <div className="space-y-1">
+                  {CATEGORIES.map((cat, index) => (
+                    <button
+                      key={cat.id}
+                      onClick={() => { setActiveCategory(cat.id); setMode('draw'); if (currentPoints.length > 0) setCurrentPoints([]); }}
+                      className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg transition-all text-left ${
+                        activeCategory === cat.id ? 'bg-white/10' : 'hover:bg-white/5'
                       }`}
                     >
-                      <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: category?.color }}></span>
-                      <span className="text-xs flex-1 truncate">{zone.label}</span>
-                      <button onClick={(e) => { e.stopPropagation(); deleteZone(zone.id); }} className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-red-400 transition-all text-xs">✕</button>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          <div className="p-3 border-t border-gray-700 bg-gray-800/50">
-            <h3 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5">Управление</h3>
-            <div className="grid grid-cols-1 gap-0.5 text-[10px] text-gray-500">
-              <div><kbd className="text-gray-400">ЛКМ</kbd> — точка / выбрать</div>
-              <div><kbd className="text-gray-400">1-я точка</kbd> — замкнуть</div>
-              <div><kbd className="text-gray-400">ПКМ/Esc</kbd> — отмена</div>
-              <div><kbd className="text-gray-400">Колесо</kbd> — масштаб</div>
-              <div><kbd className="text-gray-400">Space+ЛКМ</kbd> — панорама</div>
-              <div><kbd className="text-gray-400">Ctrl+0</kbd> — вписать</div>
-              <div><kbd className="text-gray-400">D/V</kbd> — режим</div>
-              <div><kbd className="text-gray-400">1-5</kbd> — категория</div>
-            </div>
-          </div>
-        </aside>
-
-        {/* Main */}
-        <main
-          ref={viewportRef}
-          className={`flex-1 relative overflow-hidden bg-gray-950 select-none ${
-            isPanning || spaceHeld ? 'cursor-grabbing' : (mode === 'draw' ? 'cursor-crosshair' : 'cursor-pointer')
-          }`}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={() => { setIsPanning(false); setMousePos(null); }}
-          onContextMenu={handleContextMenu}
-        >
-          <div className="absolute inset-0 opacity-5" style={{
-            backgroundImage: 'radial-gradient(circle, #ffffff 1px, transparent 1px)',
-            backgroundSize: '20px 20px'
-          }}></div>
-
-          {!activeImage ? (
-            <div className="absolute inset-0 flex items-center justify-center p-8">
-              <div className="text-center max-w-md">
-                <div
-                  onClick={() => fileInputRef.current?.click()}
-                  className="border-2 border-dashed border-gray-700 rounded-2xl p-10 cursor-pointer hover:border-blue-500/50 hover:bg-gray-800/30 transition-all group mb-4"
-                >
-                  <div className="text-5xl mb-4 group-hover:scale-110 transition-transform">🖼️</div>
-                  <h2 className="text-lg font-semibold text-gray-300 mb-2">Загрузите изображение</h2>
-                  <p className="text-gray-500 text-sm mb-4">План помещения, чертёж или фото</p>
-                  <div className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600/20 border border-blue-500/30 rounded-lg text-blue-400 text-sm">
-                    <span>📁</span>
-                    <span>Нажмите для выбора файла</span>
-                  </div>
-                  <p className="text-gray-600 text-xs mt-3">Можно загрузить несколько файлов сразу</p>
+                      <span className="w-3.5 h-3.5 rounded-sm shrink-0" style={{ backgroundColor: cat.color }}></span>
+                      <span className="text-xs font-medium flex-1">{cat.name}</span>
+                      <span className="text-[10px] text-gray-500 bg-gray-700/50 px-1.5 py-0.5 rounded">{index + 1}</span>
+                      <span className="text-[10px] font-bold text-gray-400 min-w-[16px] text-center">
+                        {activeImage.zones.filter(z => z.category === cat.id).length}
+                      </span>
+                    </button>
+                  ))}
                 </div>
-
-                <button
-                  onClick={() => projectInputRef.current?.click()}
-                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-purple-600/20 border border-purple-500/30 rounded-lg text-purple-400 text-sm hover:bg-purple-600/30 transition-all"
-                >
-                  <span>📂</span>
-                  <span>Открыть сохранённый проект</span>
-                </button>
               </div>
-            </div>
-          ) : (
-            <div style={{
-              position: 'absolute',
-              left: pan.x,
-              top: pan.y,
-              transformOrigin: '0 0',
-              transform: `scale(${zoom})`,
-            }}>
-              <canvas
-                ref={canvasRef}
-                width={activeImage.canvasSize.width}
-                height={activeImage.canvasSize.height}
-                onClick={handleCanvasClick}
-                className="rounded shadow-2xl"
-                style={{
-                  display: 'block',
-                  imageRendering: 'auto',
-                  boxShadow: '0 0 0 1px rgba(255,255,255,0.1), 0 25px 50px -12px rgba(0,0,0,0.8)',
-                }}
-              />
-            </div>
+
+              {/* Группы */}
+              <div className="p-3 border-b border-gray-700">
+                <div className="flex items-center justify-between mb-2">
+                  <h2 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Группы ({activeImage.groups.length})</h2>
+                  <button onClick={createGroup} className="text-[10px] text-blue-400 hover:text-blue-300">+ Группа</button>
+                </div>
+                <div className="space-y-1 max-h-32 overflow-y-auto">
+                  {activeImage.groups.length === 0 && <p className="text-gray-600 text-xs italic">Нет групп</p>}
+                  {activeImage.groups.map((group) => (
+                    <div
+                      key={group.id}
+                      onClick={() => setSelectedGroup(selectedGroup === group.id ? null : group.id)}
+                      className={`flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-all group ${
+                        selectedGroup === group.id ? 'bg-purple-600/20 ring-1 ring-purple-500/40' : 'hover:bg-white/5'
+                      }`}
+                    >
+                      <span className="text-xs">📁</span>
+                      <span className="text-xs font-medium flex-1 truncate">{group.name}</span>
+                      <span className="text-[10px] text-gray-500">{group.zoneIds.length}</span>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setEditingGroup(group); setShowGroupModal(true); }}
+                        className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-blue-400 text-[10px]"
+                      >✎</button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); deleteGroup(group.id); }}
+                        className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-red-400 text-xs"
+                      >✕</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Области */}
+              <div className="flex-1 overflow-y-auto p-3">
+                <h2 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">
+                  Области ({activeImage.zones.length})
+                </h2>
+                {activeImage.zones.length === 0 ? (
+                  <p className="text-gray-600 text-xs italic">Нарисуйте область</p>
+                ) : (
+                  <div className="space-y-1">
+                    {activeImage.zones.map((zone) => {
+                      const category = CATEGORIES.find(c => c.id === zone.category);
+                      const group = zone.groupId ? activeImage.groups.find(g => g.id === zone.groupId) : null;
+                      const isRenaming = renamingZoneId === zone.id;
+                      return (
+                        <div
+                          key={zone.id}
+                          onClick={() => { setSelectedZone(zone.id); setMode('select'); }}
+                          className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg cursor-pointer transition-all group ${
+                            selectedZone === zone.id ? 'bg-white/10 ring-1 ring-white/20' : 'hover:bg-white/5'
+                          } ${!zone.visible ? 'opacity-40' : ''}`}
+                        >
+                          <button
+                            onClick={(e) => { e.stopPropagation(); updateZone(zone.id, { visible: !zone.visible }); }}
+                            className="text-xs shrink-0 w-4"
+                            title={zone.visible ? 'Скрыть' : 'Показать'}
+                          >
+                            {zone.visible ? '👁️' : '🚫'}
+                          </button>
+                          <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: category?.color }}></span>
+                          {isRenaming ? (
+                            <input
+                              type="text" value={renameZoneValue}
+                              onChange={(e) => setRenameZoneValue(e.target.value)}
+                              onBlur={confirmRenameZone}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') confirmRenameZone();
+                                if (e.key === 'Escape') { setRenamingZoneId(null); setRenameZoneValue(''); }
+                                e.stopPropagation();
+                              }}
+                              autoFocus
+                              className="flex-1 bg-gray-700 text-xs px-1 py-0.5 rounded border border-blue-500 outline-none min-w-0"
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          ) : (
+                            <span className="text-xs flex-1 truncate">{zone.label}</span>
+                          )}
+                          {group && (
+                            <span className="text-[9px] text-purple-300 bg-purple-600/30 px-1 rounded shrink-0" title={group.name}>
+                              📁
+                            </span>
+                          )}
+                          {!isRenaming && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); startRenameZone(zone.id, zone.label); }}
+                              className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-blue-400 text-[10px]"
+                              title="Переименовать"
+                            >✎</button>
+                          )}
+                          <button
+                            onClick={(e) => { e.stopPropagation(); deleteZone(zone.id); }}
+                            className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-red-400 text-xs"
+                          >✕</button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Инструкция */}
+              <div className="p-3 border-t border-gray-700 bg-gray-800/50">
+                <h3 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5">Управление</h3>
+                <div className="grid grid-cols-1 gap-0.5 text-[10px] text-gray-500">
+                  <div><kbd className="text-gray-400">ЛКМ</kbd> — точка / выбрать</div>
+                  <div><kbd className="text-gray-400">1-я точка</kbd> — замкнуть</div>
+                  <div><kbd className="text-gray-400">ПКМ/Esc</kbd> — отмена</div>
+                  <div><kbd className="text-gray-400">Колесо</kbd> — масштаб</div>
+                  <div><kbd className="text-gray-400">Space+ЛКМ</kbd> — панорама</div>
+                  <div><kbd className="text-gray-400">D/V</kbd> — режим</div>
+                  <div><kbd className="text-gray-400">1-5</kbd> — категория</div>
+                </div>
+              </div>
+            </>
           )}
 
-          {activeImage && (
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-gray-800/95 backdrop-blur-sm rounded-full px-4 py-2 text-xs flex items-center gap-3 shadow-lg ring-1 ring-white/10 pointer-events-none">
-              <span className="text-gray-300 font-medium truncate max-w-[120px]">📄 {activeImage.name}</span>
-              <span className="text-gray-600">•</span>
-              <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: CATEGORIES.find(c => c.id === activeCategory)?.color }}></span>
-              <span className="text-gray-300">{CATEGORIES.find(c => c.id === activeCategory)?.name}</span>
-              <span className="text-gray-600">•</span>
-              <span className="text-gray-400">{mode === 'draw' ? '✏️' : '👆'}</span>
-              {currentPoints.length > 0 && mode === 'draw' && (
-                <>
-                  <span className="text-gray-600">•</span>
-                  <span className="text-yellow-400">{currentPoints.length}т{currentPoints.length >= 3 && ' → замкните'}</span>
-                </>
+          {tab === 'docs' && (
+            <div className="flex-1 p-3 overflow-y-auto">
+              <h2 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">Документация</h2>
+              <p className="text-xs text-gray-400 leading-relaxed">
+                В этой вкладке отображаются все группы областей с привязанными документами.
+                Кликайте по областям для перехода к ним на плане.
+              </p>
+              <div className="mt-4 p-3 bg-gray-900/50 rounded-lg">
+                <h3 className="text-xs font-semibold text-gray-300 mb-2">📋 Как работать:</h3>
+                <ol className="text-[11px] text-gray-400 space-y-1 list-decimal list-inside">
+                  <li>Создайте области на плане</li>
+                  <li>Объедините их в группы</li>
+                  <li>Добавьте ссылки на PDF и таблицы</li>
+                  <li>Кликайте по областям для навигации</li>
+                </ol>
+              </div>
+            </div>
+          )}
+        </aside>
+
+        {/* Main content */}
+        <main className="flex-1 relative overflow-hidden bg-gray-950">
+          {tab === 'canvas' ? (
+            <div
+              ref={viewportRef}
+              className={`absolute inset-0 select-none ${
+                isPanning || spaceHeld ? 'cursor-grabbing' : (mode === 'draw' ? 'cursor-crosshair' : 'cursor-pointer')
+              }`}
+              onMouseDown={handleMouseDown}
+              onMouseMove={handleMouseMove}
+              onMouseUp={handleMouseUp}
+              onMouseLeave={() => { setIsPanning(false); setMousePos(null); }}
+              onContextMenu={(e) => { e.preventDefault(); if (currentPoints.length > 0) setCurrentPoints([]); }}
+            >
+              <div className="absolute inset-0 opacity-5" style={{
+                backgroundImage: 'radial-gradient(circle, #ffffff 1px, transparent 1px)',
+                backgroundSize: '20px 20px'
+              }}></div>
+
+              {!activeImage ? (
+                <div className="absolute inset-0 flex items-center justify-center p-8">
+                  <div className="text-center max-w-md">
+                    <div
+                      onClick={() => fileInputRef.current?.click()}
+                      className="border-2 border-dashed border-gray-700 rounded-2xl p-10 cursor-pointer hover:border-blue-500/50 hover:bg-gray-800/30 transition-all group mb-4"
+                    >
+                      <div className="text-5xl mb-4 group-hover:scale-110 transition-transform">🖼️</div>
+                      <h2 className="text-lg font-semibold text-gray-300 mb-2">Загрузите изображение</h2>
+                      <p className="text-gray-500 text-sm mb-4">План помещения для разметки зон</p>
+                      <div className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600/20 border border-blue-500/30 rounded-lg text-blue-400 text-sm">
+                        <span>📁</span><span>Выбрать файл</span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => projectInputRef.current?.click()}
+                      className="inline-flex items-center gap-2 px-5 py-2.5 bg-purple-600/20 border border-purple-500/30 rounded-lg text-purple-400 text-sm hover:bg-purple-600/30 transition-all"
+                    >
+                      <span>📂</span><span>Открыть проект</span>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div style={{
+                  position: 'absolute', left: pan.x, top: pan.y,
+                  transformOrigin: '0 0', transform: `scale(${zoom})`,
+                }}>
+                  <canvas
+                    ref={canvasRef}
+                    width={activeImage.canvasSize.width}
+                    height={activeImage.canvasSize.height}
+                    onClick={handleCanvasClick}
+                    className="rounded shadow-2xl"
+                    style={{
+                      display: 'block', imageRendering: 'auto',
+                      boxShadow: '0 0 0 1px rgba(255,255,255,0.1), 0 25px 50px -12px rgba(0,0,0,0.8)',
+                    }}
+                  />
+                </div>
               )}
-              <span className="text-gray-600">•</span>
-              <span className="text-gray-400">{zoomPercent}%</span>
+
+              {activeImage && (
+                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-gray-800/95 backdrop-blur-sm rounded-full px-4 py-2 text-xs flex items-center gap-3 shadow-lg ring-1 ring-white/10 pointer-events-none">
+                  <span className="text-gray-300 font-medium truncate max-w-[120px]">📄 {activeImage.name}</span>
+                  <span className="text-gray-600">•</span>
+                  <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: CATEGORIES.find(c => c.id === activeCategory)?.color }}></span>
+                  <span className="text-gray-300">{CATEGORIES.find(c => c.id === activeCategory)?.name}</span>
+                  <span className="text-gray-600">•</span>
+                  <span className="text-gray-400">{mode === 'draw' ? '✏️' : '👆'}</span>
+                  {currentPoints.length > 0 && mode === 'draw' && (
+                    <>
+                      <span className="text-gray-600">•</span>
+                      <span className="text-yellow-400">{currentPoints.length}т{currentPoints.length >= 3 && ' → замкните'}</span>
+                    </>
+                  )}
+                  <span className="text-gray-600">•</span>
+                  <span className="text-gray-400">{zoomPercent}%</span>
+                </div>
+              )}
+            </div>
+          ) : (
+            // Вкладка документов
+            <div className="absolute inset-0 overflow-auto p-6">
+              {!activeImage ? (
+                <div className="text-center py-20">
+                  <div className="text-5xl mb-4 opacity-30">📑</div>
+                  <p className="text-gray-500">Загрузите изображение для работы с документами</p>
+                </div>
+              ) : (
+                <div className="max-w-6xl mx-auto">
+                  <div className="flex items-center justify-between mb-6">
+                    <div>
+                      <h2 className="text-2xl font-bold text-white">📑 Документация</h2>
+                      <p className="text-sm text-gray-400 mt-1">
+                        {activeImage.name} · {activeImage.groups.length} групп · {activeImage.zones.length} областей
+                      </p>
+                    </div>
+                    <button onClick={createGroup} className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg text-sm font-medium transition-colors">
+                      + Новая группа
+                    </button>
+                  </div>
+
+                  {activeImage.groups.length === 0 && activeImage.zones.length === 0 ? (
+                    <div className="text-center py-16 bg-gray-800/30 rounded-xl border border-gray-700">
+                      <div className="text-4xl mb-3 opacity-50">📋</div>
+                      <p className="text-gray-400 mb-2">Нет данных</p>
+                      <p className="text-sm text-gray-500">Создайте области на плане и объедините их в группы</p>
+                      <button
+                        onClick={() => setTab('canvas')}
+                        className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm transition-colors"
+                      >
+                        Перейти к областям
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {/* Группы с документами */}
+                      {activeImage.groups.map((group) => {
+                        const groupZones = activeImage.zones.filter(z => group.zoneIds.includes(z.id));
+                        return (
+                          <div key={group.id} className="bg-gray-800/50 rounded-xl border border-gray-700 overflow-hidden">
+                            <div className="p-4 border-b border-gray-700 flex items-start justify-between gap-4">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="text-lg">📁</span>
+                                  <h3 className="text-lg font-semibold text-white">{group.name}</h3>
+                                  <button
+                                    onClick={() => { setEditingGroup(group); setShowGroupModal(true); }}
+                                    className="text-xs text-gray-400 hover:text-blue-400 transition-colors"
+                                  >
+                                    ✎ Редактировать
+                                  </button>
+                                </div>
+                                {group.notes && (
+                                  <p className="text-sm text-gray-400 mt-1">{group.notes}</p>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => goToGroup(group.id)}
+                                  className="px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 rounded-lg text-xs text-blue-400 transition-colors"
+                                  title="Показать на плане"
+                                >
+                                  🗺️ На плане
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Ссылки на документы */}
+                            <div className="p-4 border-b border-gray-700 bg-gray-900/30 grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <div>
+                                <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1 block">
+                                  📄 PDF документ
+                                </label>
+                                {group.pdfUrl ? (
+                                  <a
+                                    href={group.pdfUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-2 px-3 py-2 bg-red-600/20 hover:bg-red-600/30 border border-red-500/30 rounded-lg text-xs text-red-300 transition-colors"
+                                  >
+                                    <span>📕</span>
+                                    <span className="truncate max-w-[200px]">{group.pdfUrl}</span>
+                                    <span>↗</span>
+                                  </a>
+                                ) : (
+                                  <span className="text-xs text-gray-600 italic">Не указана</span>
+                                )}
+                              </div>
+                              <div>
+                                <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1 block">
+                                  📊 Таблица
+                                </label>
+                                {group.tableUrl ? (
+                                  <a
+                                    href={group.tableUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-2 px-3 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 rounded-lg text-xs text-emerald-300 transition-colors"
+                                  >
+                                    <span>📗</span>
+                                    <span className="truncate max-w-[200px]">{group.tableUrl}</span>
+                                    <span>↗</span>
+                                  </a>
+                                ) : (
+                                  <span className="text-xs text-gray-600 italic">Не указана</span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Области в группе */}
+                            <div className="p-4">
+                              <h4 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">
+                                Области в группе ({groupZones.length})
+                              </h4>
+                              {groupZones.length === 0 ? (
+                                <p className="text-xs text-gray-600 italic">Нет областей</p>
+                              ) : (
+                                <div className="flex flex-wrap gap-2">
+                                  {groupZones.map((zone) => {
+                                    const category = CATEGORIES.find(c => c.id === zone.category);
+                                    return (
+                                      <button
+                                        key={zone.id}
+                                        onClick={() => goToZone(zone.id)}
+                                        className="flex items-center gap-2 px-3 py-1.5 bg-gray-700/50 hover:bg-gray-700 border border-gray-600 hover:border-blue-500/50 rounded-lg text-xs transition-all group"
+                                      >
+                                        <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: category?.color }}></span>
+                                        <span className="text-gray-200">{zone.label}</span>
+                                        <span className="text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity">→</span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      {/* Области без группы */}
+                      {activeImage.zones.filter(z => !z.groupId).length > 0 && (
+                        <div className="bg-gray-800/30 rounded-xl border border-dashed border-gray-700 p-4">
+                          <h3 className="text-sm font-semibold text-gray-400 mb-3">
+                            ⚠️ Области без группы ({activeImage.zones.filter(z => !z.groupId).length})
+                          </h3>
+                          <div className="flex flex-wrap gap-2">
+                            {activeImage.zones.filter(z => !z.groupId).map((zone) => {
+                              const category = CATEGORIES.find(c => c.id === zone.category);
+                              return (
+                                <button
+                                  key={zone.id}
+                                  onClick={() => goToZone(zone.id)}
+                                  className="flex items-center gap-2 px-3 py-1.5 bg-gray-700/30 hover:bg-gray-700 border border-gray-600 hover:border-blue-500/50 rounded-lg text-xs transition-all group"
+                                >
+                                  <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: category?.color }}></span>
+                                  <span className="text-gray-300">{zone.label}</span>
+                                  <span className="text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity">→</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </main>
       </div>
+
+      {/* Модальное окно редактирования группы */}
+      {showGroupModal && editingGroup && activeImage && (
+        <GroupModal
+          group={editingGroup}
+          allZones={activeImage.zones}
+          onSave={(patch) => {
+            updateGroup(editingGroup.id, patch);
+            setShowGroupModal(false);
+            setEditingGroup(null);
+          }}
+          onClose={() => { setShowGroupModal(false); setEditingGroup(null); }}
+          onToggleZone={(zoneId) => toggleZoneInGroup(editingGroup.id, zoneId)}
+        />
+      )}
 
       {/* Модальное окно экспорта */}
       {exportModal && (
@@ -1021,9 +1333,9 @@ function App() {
           <div className="bg-gray-800 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col">
             <div className="flex items-center justify-between p-4 border-b border-gray-700">
               <h2 className="text-lg font-semibold text-white">
-                {exportModal.type === 'project' ? '📦 Сохранение проекта' : '💾 Экспорт зон'}
+                {exportModal.type === 'project' ? '📦 Сохранение проекта' : '💾 Экспорт'}
               </h2>
-              <button onClick={() => setExportModal(null)} className="text-gray-400 hover:text-white transition-colors text-xl">✕</button>
+              <button onClick={() => setExportModal(null)} className="text-gray-400 hover:text-white text-xl">✕</button>
             </div>
             <div className="p-4 flex-1 overflow-hidden flex flex-col">
               <p className="text-sm text-gray-400 mb-1">
@@ -1033,9 +1345,9 @@ function App() {
                 Размер: <span className="text-white">{(exportModal.data.length / 1024).toFixed(1)} KB</span>
               </p>
               <div className="flex gap-2 mb-4">
-                <button onClick={downloadFromModal} className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium transition-colors">⬇️ Скачать</button>
-                <button onClick={openInNewTab} className="flex-1 px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg text-sm font-medium transition-colors">🔗 Новая вкладка</button>
-                <button onClick={copyToClipboard} className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg text-sm font-medium transition-colors">📋 Копировать</button>
+                <button onClick={downloadFromModal} className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium">⬇️ Скачать</button>
+                <button onClick={openInNewTab} className="flex-1 px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg text-sm font-medium">🔗 Вкладка</button>
+                <button onClick={copyToClipboard} className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg text-sm font-medium">📋 Копировать</button>
               </div>
               <div className="flex-1 overflow-auto bg-gray-900 rounded-lg p-3">
                 <pre className="text-xs text-gray-300 font-mono whitespace-pre-wrap break-all">
@@ -1044,11 +1356,119 @@ function App() {
               </div>
             </div>
             <div className="p-4 border-t border-gray-700 flex justify-end">
-              <button onClick={() => setExportModal(null)} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm font-medium transition-colors">Закрыть</button>
+              <button onClick={() => setExportModal(null)} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm font-medium">Закрыть</button>
             </div>
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ===== Модальное окно группы =====
+function GroupModal({
+  group, allZones, onSave, onClose, onToggleZone,
+}: {
+  group: Group;
+  allZones: Zone[];
+  onSave: (patch: Partial<Group>) => void;
+  onClose: () => void;
+  onToggleZone: (zoneId: string) => void;
+}) {
+  const [name, setName] = useState(group.name);
+  const [pdfUrl, setPdfUrl] = useState(group.pdfUrl);
+  const [tableUrl, setTableUrl] = useState(group.tableUrl);
+  const [notes, setNotes] = useState(group.notes);
+
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-gray-800 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b border-gray-700">
+          <h2 className="text-lg font-semibold text-white">📁 Редактирование группы</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-white text-xl">✕</button>
+        </div>
+
+        <div className="p-4 flex-1 overflow-y-auto space-y-4">
+          <div>
+            <label className="text-xs font-semibold text-gray-400 mb-1 block">Название группы</label>
+            <input
+              type="text" value={name} onChange={(e) => setName(e.target.value)}
+              className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500"
+              placeholder="Например: 1 этаж, секция А"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-semibold text-gray-400 mb-1 block">📄 Ссылка на PDF</label>
+              <input
+                type="url" value={pdfUrl} onChange={(e) => setPdfUrl(e.target.value)}
+                className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500"
+                placeholder="https://... или путь к файлу"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-400 mb-1 block">📊 Ссылка на таблицу</label>
+              <input
+                type="url" value={tableUrl} onChange={(e) => setTableUrl(e.target.value)}
+                className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500"
+                placeholder="https://... или путь к файлу"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-gray-400 mb-1 block">📝 Заметки</label>
+            <textarea
+              value={notes} onChange={(e) => setNotes(e.target.value)}
+              rows={3}
+              className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500 resize-none"
+              placeholder="Описание работ, объёмы, даты..."
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-gray-400 mb-2 block">
+              Области в группе ({group.zoneIds.length})
+            </label>
+            {allZones.length === 0 ? (
+              <p className="text-xs text-gray-600 italic">Нет областей. Создайте их на плане.</p>
+            ) : (
+              <div className="grid grid-cols-2 gap-1.5 max-h-48 overflow-y-auto bg-gray-900/50 rounded-lg p-2">
+                {allZones.map((zone) => {
+                  const category = CATEGORIES.find(c => c.id === zone.category);
+                  const isInGroup = group.zoneIds.includes(zone.id);
+                  return (
+                    <button
+                      key={zone.id}
+                      onClick={() => onToggleZone(zone.id)}
+                      className={`flex items-center gap-2 px-2 py-1.5 rounded text-xs text-left transition-all ${
+                        isInGroup
+                          ? 'bg-purple-600/30 border border-purple-500/50'
+                          : 'bg-gray-800 hover:bg-gray-700 border border-transparent'
+                      }`}
+                    >
+                      <span className={`w-3 h-3 rounded-sm shrink-0 border-2 ${isInGroup ? 'bg-purple-500 border-purple-400' : 'border-gray-600'}`}></span>
+                      <span className="w-2 h-2 rounded-sm shrink-0" style={{ backgroundColor: category?.color }}></span>
+                      <span className="flex-1 truncate">{zone.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="p-4 border-t border-gray-700 flex justify-end gap-2">
+          <button onClick={onClose} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm font-medium">Отмена</button>
+          <button
+            onClick={() => onSave({ name: name.trim() || 'Без имени', pdfUrl, tableUrl, notes })}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium"
+          >
+            Сохранить
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
