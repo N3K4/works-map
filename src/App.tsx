@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 
+// Типы
 interface Point {
   x: number;
   y: number;
@@ -48,20 +49,20 @@ function App() {
   const [mode, setMode] = useState<'draw' | 'select'>('draw');
   const [editingImageName, setEditingImageName] = useState<string | null>(null);
   const [tempName, setTempName] = useState('');
-
-  // Zoom/Pan state
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState<Point>({ x: 0, y: 0 });
   const [spaceHeld, setSpaceHeld] = useState(false);
   const [dragDistance, setDragDistance] = useState(0);
-  const mouseDownPos = useRef<Point>({ x: 0, y: 0 });
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const projectInputRef = useRef<HTMLInputElement>(null);
+  const mouseDownPos = useRef<Point>({ x: 0, y: 0 });
+  const zoomRef = useRef({ zoom: 1, pan: { x: 0, y: 0 } });
+  zoomRef.current = { zoom, pan };
 
   const activeImage = images.find(img => img.id === activeImageId) || null;
 
@@ -128,7 +129,7 @@ function App() {
     });
   }, [activeImage]);
 
-  // Переключение на другое изображение
+  // Переключение изображения
   const switchImage = (id: string) => {
     setActiveImageId(id);
     setCurrentPoints([]);
@@ -139,7 +140,7 @@ function App() {
     }
   };
 
-  // Получение координат мыши в координатах canvas
+  // Получение координат мыши
   const getCanvasCoords = (e: React.MouseEvent): Point => {
     const viewport = viewportRef.current;
     if (!viewport || !activeImage) return { x: 0, y: 0 };
@@ -155,9 +156,6 @@ function App() {
   };
 
   // Wheel — зум к курсору
-  const zoomRef = useRef({ zoom: 1, pan: { x: 0, y: 0 } });
-  zoomRef.current = { zoom, pan };
-
   useEffect(() => {
     const viewport = viewportRef.current;
     if (!viewport) return;
@@ -189,7 +187,7 @@ function App() {
     return () => viewport.removeEventListener('wheel', handleWheelEvent);
   }, [activeImage]);
 
-  // Pan — средняя кнопка мыши или Space + ЛКМ
+  // Pan
   const handleMouseDown = (e: React.MouseEvent) => {
     mouseDownPos.current = { x: e.clientX, y: e.clientY };
     setDragDistance(0);
@@ -219,7 +217,9 @@ function App() {
   };
 
   const handleMouseUp = () => {
-    setIsPanning(false);
+    if (isPanning) {
+      setIsPanning(false);
+    }
   };
 
   // Клик по canvas
@@ -241,7 +241,6 @@ function App() {
       return;
     }
 
-    // Режим рисования - проверка замыкания
     if (currentPoints.length >= 3) {
       const firstPoint = currentPoints[0];
       const distance = Math.sqrt(
@@ -264,14 +263,12 @@ function App() {
     setCurrentPoints([...currentPoints, point]);
   };
 
-  // Обновление зон активного изображения
   const updateImageZones = (zones: Zone[]) => {
     setImages(prev => prev.map(img =>
       img.id === activeImageId ? { ...img, zones } : img
     ));
   };
 
-  // Правый клик - отмена
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
     if (currentPoints.length > 0) {
@@ -299,16 +296,17 @@ function App() {
         updateImageZones(activeImage.zones.filter(z => z.id !== selectedZone));
         setSelectedZone(null);
       }
-      if ((e.key === 'v' || e.key === 'V') && !e.ctrlKey && !e.metaKey) {
+      if ((e.key === 'v' || e.key === 'V' || e.key === 'м' || e.key === 'М') && !e.ctrlKey && !e.metaKey) {
         setMode('select');
         setCurrentPoints([]);
       }
-      if ((e.key === 'd' || e.key === 'D') && !e.ctrlKey && !e.metaKey) {
+      if ((e.key === 'd' || e.key === 'D' || e.key === 'в' || e.key === 'В') && !e.ctrlKey && !e.metaKey) {
         setMode('draw');
       }
       const num = parseInt(e.key);
       if (num >= 1 && num <= 5) {
         setActiveCategory(CATEGORIES[num - 1].id);
+        setMode('draw');
       }
       if (e.key === '0' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
@@ -344,7 +342,6 @@ function App() {
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(activeImage.img, 0, 0, canvas.width, canvas.height);
 
-    // Рисуем зоны
     activeImage.zones.forEach((zone) => {
       const category = CATEGORIES.find(c => c.id === zone.category);
       if (!category) return;
@@ -364,7 +361,6 @@ function App() {
       ctx.setLineDash([]);
       ctx.stroke();
 
-      // Метка
       const centerX = zone.points.reduce((sum, p) => sum + p.x, 0) / zone.points.length;
       const centerY = zone.points.reduce((sum, p) => sum + p.y, 0) / zone.points.length;
       const fontSize = Math.max(10, 12 / zoom);
@@ -378,7 +374,6 @@ function App() {
       ctx.fillText(zone.label, centerX, centerY);
     });
 
-    // Текущий полигон
     if (currentPoints.length > 0 && mode === 'draw') {
       const category = CATEGORIES.find(c => c.id === activeCategory);
       if (!category) return;
@@ -395,7 +390,6 @@ function App() {
         ctx.fill();
       }
 
-      // Линии между точками
       if (currentPoints.length >= 2) {
         ctx.beginPath();
         ctx.moveTo(currentPoints[0].x, currentPoints[0].y);
@@ -408,7 +402,6 @@ function App() {
         ctx.stroke();
       }
 
-      // Пунктир до курсора
       if (mousePos && currentPoints.length >= 1) {
         ctx.beginPath();
         ctx.moveTo(currentPoints[currentPoints.length - 1].x, currentPoints[currentPoints.length - 1].y);
@@ -418,9 +411,19 @@ function App() {
         ctx.setLineDash([6 / zoom, 4 / zoom]);
         ctx.stroke();
         ctx.setLineDash([]);
+
+        if (currentPoints.length >= 3) {
+          ctx.beginPath();
+          ctx.moveTo(mousePos.x, mousePos.y);
+          ctx.lineTo(currentPoints[0].x, currentPoints[0].y);
+          ctx.strokeStyle = category.color + '60';
+          ctx.lineWidth = 1 / zoom;
+          ctx.setLineDash([4 / zoom, 4 / zoom]);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
       }
 
-      // Точки
       currentPoints.forEach((point, index) => {
         const isFirst = index === 0 && currentPoints.length >= 3;
         const radius = (isFirst ? 8 : 5) / zoom;
@@ -441,26 +444,43 @@ function App() {
           ctx.stroke();
         }
       });
+
+      if (mousePos && currentPoints.length >= 3) {
+        const firstPoint = currentPoints[0];
+        const distance = Math.sqrt(
+          Math.pow(mousePos.x - firstPoint.x, 2) + Math.pow(mousePos.y - firstPoint.y, 2)
+        );
+        const snapRadius = 15 / zoom;
+        if (distance < snapRadius) {
+          ctx.beginPath();
+          ctx.arc(firstPoint.x, firstPoint.y, snapRadius, 0, Math.PI * 2);
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 2 / zoom;
+          ctx.setLineDash([4 / zoom, 4 / zoom]);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+      }
     }
   }, [activeImage, currentPoints, mousePos, activeCategory, selectedZone, mode, zoom]);
 
-  // Удаление зоны
   const deleteZone = (zoneId: string) => {
     if (!activeImage) return;
     updateImageZones(activeImage.zones.filter(z => z.id !== zoneId));
     if (selectedZone === zoneId) setSelectedZone(null);
   };
 
-  // Очистка всех зон
   const clearAllZones = () => {
     if (!activeImage) return;
-    updateImageZones([]);
-    setCurrentPoints([]);
-    setSelectedZone(null);
+    if (window.confirm('Удалить все выделенные области на этом изображении?')) {
+      updateImageZones([]);
+      setCurrentPoints([]);
+      setSelectedZone(null);
+    }
   };
 
-  // Экспорт данных (синхронно — работает в sandbox)
-  const exportData = () => {
+  // Экспорт зон (JSON)
+  const exportData = async () => {
     const data = {
       images: images.map(img => ({
         name: img.name,
@@ -474,23 +494,55 @@ function App() {
     };
     const content = JSON.stringify(data, null, 2);
     const fileName = 'zones-export.json';
-
     const blob = new Blob([content], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fileName;
-    a.style.display = 'none';
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => {
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    }, 3000);
+
+    if ('showSaveFilePicker' in window) {
+      try {
+        const handle = await (window as any).showSaveFilePicker({
+          suggestedName: fileName,
+          types: [{ description: 'JSON File', accept: { 'application/json': ['.json'] } }],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        return;
+      } catch (err: any) {
+        if (err.name === 'AbortError') return;
+      }
+    }
+
+    try {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 3000);
+      return;
+    } catch {
+      // Fallback
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const a = document.createElement('a');
+      a.href = reader.result as string;
+      a.download = fileName;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => document.body.removeChild(a), 100);
+    };
+    reader.readAsDataURL(blob);
   };
 
-  // Экспорт полного проекта (синхронно — работает в sandbox)
-  const exportProject = () => {
+  // Экспорт проекта (.zoneproj)
+  const exportProject = async () => {
     const projectData = {
       version: '1.0',
       exportedAt: new Date().toISOString(),
@@ -512,22 +564,53 @@ function App() {
     const content = JSON.stringify(projectData);
     const date = new Date().toISOString().slice(0, 10);
     const fileName = `project-${date}.zoneproj`;
-
     const blob = new Blob([content], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fileName;
-    a.style.display = 'none';
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => {
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    }, 3000);
+
+    if ('showSaveFilePicker' in window) {
+      try {
+        const handle = await (window as any).showSaveFilePicker({
+          suggestedName: fileName,
+          types: [{ description: 'Zone Project File', accept: { 'application/json': ['.zoneproj'] } }],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        return;
+      } catch (err: any) {
+        if (err.name === 'AbortError') return;
+      }
+    }
+
+    try {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 3000);
+      return;
+    } catch {
+      // Fallback
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const a = document.createElement('a');
+      a.href = reader.result as string;
+      a.download = fileName;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => document.body.removeChild(a), 100);
+    };
+    reader.readAsDataURL(blob);
   };
 
-  // Удаление изображения
   const deleteImage = (id: string) => {
     setImages(prev => prev.filter(img => img.id !== id));
     if (activeImageId === id) {
@@ -536,7 +619,21 @@ function App() {
     }
   };
 
-  // Импорт проекта
+  const startRename = (id: string, currentName: string) => {
+    setEditingImageName(id);
+    setTempName(currentName);
+  };
+
+  const confirmRename = () => {
+    if (editingImageName && tempName.trim()) {
+      setImages(prev => prev.map(img =>
+        img.id === editingImageName ? { ...img, name: tempName.trim() } : img
+      ));
+    }
+    setEditingImageName(null);
+    setTempName('');
+  };
+
   const importProject = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -547,6 +644,7 @@ function App() {
         const data = JSON.parse(event.target?.result as string);
 
         if (!data.images || !Array.isArray(data.images)) {
+          alert('Неверный формат файла проекта');
           return;
         }
 
@@ -593,12 +691,14 @@ function App() {
                 fitToScreen(activeImg.img.width, activeImg.img.height);
               }
             }, 100);
+
+            alert(`Проект загружен: ${loadedImages.length} изобр., ${loadedImages.reduce((sum, i) => sum + i.zones.length, 0)} областей`);
           })
           .catch(err => {
-            console.error('Import error:', err);
+            alert(`Ошибка загрузки: ${err.message}`);
           });
       } catch (err) {
-        console.error('Parse error:', err);
+        alert('Ошибка чтения файла');
       }
     };
     reader.readAsText(file);
@@ -608,23 +708,6 @@ function App() {
     }
   };
 
-  // Переименование
-  const startRename = (id: string, currentName: string) => {
-    setEditingImageName(id);
-    setTempName(currentName);
-  };
-
-  const confirmRename = () => {
-    if (editingImageName && tempName.trim()) {
-      setImages(prev => prev.map(img =>
-        img.id === editingImageName ? { ...img, name: tempName.trim() } : img
-      ));
-    }
-    setEditingImageName(null);
-    setTempName('');
-  };
-
-  // Проверка попадания точки в полигон
   const isPointInPolygon = (point: Point, polygon: Point[]): boolean => {
     let inside = false;
     for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
@@ -637,7 +720,6 @@ function App() {
     return inside;
   };
 
-  // Zoom controls
   const zoomIn = () => {
     const viewport = viewportRef.current;
     if (!viewport) return;
@@ -673,7 +755,6 @@ function App() {
 
   return (
     <div className="h-screen flex flex-col bg-gray-900 text-white overflow-hidden">
-      {/* Скрытый input для загрузки файлов */}
       <input
         ref={fileInputRef}
         type="file"
@@ -690,7 +771,6 @@ function App() {
         className="hidden"
       />
 
-      {/* Header */}
       <header className="bg-gray-800/95 backdrop-blur-sm border-b border-gray-700 px-4 py-2 flex items-center justify-between shrink-0 z-20">
         <div className="flex items-center gap-3">
           <div className="text-xl">🏗️</div>
@@ -709,7 +789,7 @@ function App() {
 
           {activeImage && (
             <>
-              <div className="flex bg-gray-700 rounded-lg p-0.5 mx-1">
+              <div className="flex bg-gray-700 rounded-lg p-0.5 mx-2">
                 <button
                   onClick={() => setMode('draw')}
                   className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
@@ -731,15 +811,39 @@ function App() {
                 </button>
               </div>
 
-              <div className="flex items-center bg-gray-700/50 rounded-lg p-0.5 gap-0.5">
-                <button onClick={zoomOut} className="px-2 py-1.5 text-xs text-gray-300 hover:text-white hover:bg-gray-600 rounded transition-colors" title="Уменьшить">−</button>
-                <button onClick={resetZoom} className="px-2 py-1.5 text-xs text-gray-300 hover:text-white hover:bg-gray-600 rounded transition-colors min-w-[48px] text-center font-mono" title="Сбросить">{zoomPercent}%</button>
-                <button onClick={zoomIn} className="px-2 py-1.5 text-xs text-gray-300 hover:text-white hover:bg-gray-600 rounded transition-colors" title="Увеличить">+</button>
+              <div className="flex items-center bg-gray-700/50 rounded-lg p-0.5 gap-0.5 mr-2">
+                <button
+                  onClick={zoomOut}
+                  className="px-2 py-1.5 text-xs text-gray-300 hover:text-white hover:bg-gray-600 rounded transition-colors"
+                  title="Уменьшить"
+                >
+                  −
+                </button>
+                <button
+                  onClick={resetZoom}
+                  className="px-2 py-1.5 text-xs text-gray-300 hover:text-white hover:bg-gray-600 rounded transition-colors min-w-[48px] text-center font-mono"
+                  title="Сбросить масштаб"
+                >
+                  {zoomPercent}%
+                </button>
+                <button
+                  onClick={zoomIn}
+                  className="px-2 py-1.5 text-xs text-gray-300 hover:text-white hover:bg-gray-600 rounded transition-colors"
+                  title="Увеличить"
+                >
+                  +
+                </button>
                 <div className="w-px h-4 bg-gray-600 mx-0.5"></div>
-                <button onClick={() => activeImage && fitToScreen(activeImage.img.width, activeImage.img.height)} className="px-2 py-1.5 text-xs text-gray-300 hover:text-white hover:bg-gray-600 rounded transition-colors" title="Вписать">⊡</button>
+                <button
+                  onClick={() => activeImage && fitToScreen(activeImage.img.width, activeImage.img.height)}
+                  className="px-2 py-1.5 text-xs text-gray-300 hover:text-white hover:bg-gray-600 rounded transition-colors"
+                  title="Вписать в экран"
+                >
+                  ⊡
+                </button>
               </div>
 
-              <div className="flex items-center gap-1 mx-1">
+              <div className="flex items-center gap-1 mx-2">
                 <button
                   onClick={exportProject}
                   disabled={images.length === 0}
@@ -762,9 +866,9 @@ function App() {
                   <button
                     onClick={exportData}
                     className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-xs font-medium transition-colors"
-                    title="Экспорт только зон"
+                    title="Экспорт зон"
                   >
-                    💾 Экспорт
+                    💾 Экспорт зон
                   </button>
                   <button
                     onClick={clearAllZones}
@@ -780,9 +884,7 @@ function App() {
       </header>
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar */}
         <aside className="w-64 bg-gray-800/95 border-r border-gray-700 flex flex-col shrink-0 overflow-hidden z-10">
-          {/* Список изображений */}
           <div className="p-3 border-b border-gray-700">
             <div className="flex items-center justify-between mb-2">
               <h2 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">
@@ -866,7 +968,6 @@ function App() {
             </div>
           </div>
 
-          {/* Категории */}
           <div className="p-3 border-b border-gray-700">
             <h2 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">
               Категории
@@ -902,7 +1003,6 @@ function App() {
             </div>
           </div>
 
-          {/* Список зон */}
           <div className="flex-1 overflow-y-auto p-3">
             <h2 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">
               Области ({activeImage ? activeImage.zones.length : 0})
@@ -949,7 +1049,6 @@ function App() {
             )}
           </div>
 
-          {/* Инструкция */}
           <div className="p-3 border-t border-gray-700 bg-gray-800/50">
             <h3 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5">
               Управление
@@ -959,18 +1058,16 @@ function App() {
               <div><kbd className="text-gray-400">1-я точка</kbd> — замкнуть</div>
               <div><kbd className="text-gray-400">ПКМ/Esc</kbd> — отмена</div>
               <div><kbd className="text-gray-400">Колесо</kbd> — масштаб</div>
-              <div><kbd className="text-gray-400">Space+ЛКМ</kbd> — панорама</div>
-              <div><kbd className="text-gray-400">Ctrl+0</kbd> — вписать</div>
+              <div><kbd className="text-gray-400">Space+перетаскивание</kbd> — панорама</div>
               <div><kbd className="text-gray-400">D/V</kbd> — режим</div>
               <div><kbd className="text-gray-400">1-5</kbd> — категория</div>
             </div>
           </div>
         </aside>
 
-        {/* Main Canvas Area */}
         <main
           ref={viewportRef}
-          className={`flex-1 relative overflow-hidden bg-gray-950 select-none ${
+          className={`flex-1 relative overflow-hidden bg-gray-950 no-select ${
             isPanning || spaceHeld ? 'cursor-grabbing' : (mode === 'draw' ? 'cursor-crosshair' : 'cursor-pointer')
           }`}
           onMouseDown={handleMouseDown}
@@ -982,7 +1079,6 @@ function App() {
           }}
           onContextMenu={handleContextMenu}
         >
-          {/* Background pattern */}
           <div className="absolute inset-0 opacity-5" style={{
             backgroundImage: 'radial-gradient(circle, #ffffff 1px, transparent 1px)',
             backgroundSize: '20px 20px'
@@ -1011,6 +1107,10 @@ function App() {
                   </p>
                 </div>
 
+                {images.length > 0 && (
+                  <div className="text-gray-500 text-sm mb-2">или</div>
+                )}
+
                 <button
                   onClick={() => projectInputRef.current?.click()}
                   className="inline-flex items-center gap-2 px-5 py-2.5 bg-purple-600/20 border border-purple-500/30 rounded-lg text-purple-400 text-sm hover:bg-purple-600/30 transition-all"
@@ -1018,6 +1118,9 @@ function App() {
                   <span>📂</span>
                   <span>Открыть сохранённый проект</span>
                 </button>
+                <p className="text-gray-600 text-xs mt-2">
+                  Формат .zoneproj
+                </p>
               </div>
             </div>
           ) : (
@@ -1039,13 +1142,13 @@ function App() {
                 style={{
                   display: 'block',
                   imageRendering: 'auto',
+                  willChange: 'transform',
                   boxShadow: '0 0 0 1px rgba(255,255,255,0.1), 0 25px 50px -12px rgba(0,0,0,0.8)',
                 }}
               />
             </div>
           )}
 
-          {/* Status Bar */}
           {activeImage && (
             <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-gray-800/95 backdrop-blur-sm rounded-full px-4 py-2 text-xs flex items-center gap-3 shadow-lg ring-1 ring-white/10 pointer-events-none">
               <span className="text-gray-300 font-medium truncate max-w-[120px]">
@@ -1076,6 +1179,12 @@ function App() {
               <span className="text-gray-400">
                 {zoomPercent}%
               </span>
+            </div>
+          )}
+
+          {activeImage && (
+            <div className="absolute top-3 right-3 text-[10px] text-gray-600 pointer-events-none">
+              Колесо — зум • Space+ЛКМ — панорама
             </div>
           )}
         </main>
