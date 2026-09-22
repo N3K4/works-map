@@ -51,7 +51,6 @@ const MAX_ZOOM = 10;
 type Tab = 'canvas' | 'docs';
 
 function App() {
-  // Основные state
   const [images, setImages] = useState<ImageData[]>([]);
   const [activeImageId, setActiveImageId] = useState<string | null>(null);
   const [currentPoints, setCurrentPoints] = useState<Point[]>([]);
@@ -61,19 +60,16 @@ function App() {
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
   const [mode, setMode] = useState<'draw' | 'select'>('draw');
   const [tab, setTab] = useState<Tab>('canvas');
-
-  // UI state
   const [editingImageName, setEditingImageName] = useState<string | null>(null);
   const [tempName, setTempName] = useState('');
   const [renamingZoneId, setRenamingZoneId] = useState<string | null>(null);
   const [renameZoneValue, setRenameZoneValue] = useState('');
   const [highlightZoneId, setHighlightZoneId] = useState<string | null>(null);
   const [highlightUntil, setHighlightUntil] = useState<number>(0);
-  const [exportModal, setExportModal] = useState<{ data: string; filename: string; type: string } | null>(null);
+  const [exportModal, setExportModal] = useState<{ content: string; filename: string; type: string } | null>(null);
   const [editingGroup, setEditingGroup] = useState<Group | null>(null);
   const [showGroupModal, setShowGroupModal] = useState(false);
 
-  // Zoom/Pan
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
@@ -89,7 +85,6 @@ function App() {
 
   const activeImage = images.find(img => img.id === activeImageId) || null;
 
-  // ===== Загрузка изображения =====
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
@@ -119,7 +114,6 @@ function App() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  // ===== Zoom =====
   const fitToScreen = useCallback((imgWidth?: number, imgHeight?: number) => {
     const viewport = viewportRef.current;
     if (!viewport) return;
@@ -176,7 +170,6 @@ function App() {
     return () => viewport.removeEventListener('wheel', handleWheelEvent);
   }, [activeImage]);
 
-  // ===== Pan =====
   const handleMouseDown = (e: React.MouseEvent) => {
     mouseDownPos.current = { x: e.clientX, y: e.clientY };
     setDragDistance(0);
@@ -201,7 +194,6 @@ function App() {
 
   const handleMouseUp = () => setIsPanning(false);
 
-  // ===== Клик по canvas =====
   const handleCanvasClick = (e: React.MouseEvent) => {
     if (!activeImage) return;
     if (isPanning || spaceHeld || dragDistance > 5) return;
@@ -219,7 +211,6 @@ function App() {
       return;
     }
 
-    // Замыкание
     if (currentPoints.length >= 3) {
       const firstPoint = currentPoints[0];
       const distance = Math.sqrt(
@@ -242,7 +233,6 @@ function App() {
     setCurrentPoints([...currentPoints, point]);
   };
 
-  // ===== Обновление данных изображения =====
   const updateImage = (patch: Partial<ImageData>) => {
     setImages(prev => prev.map(img =>
       img.id === activeImageId ? { ...img, ...patch } : img
@@ -272,7 +262,6 @@ function App() {
     if (selectedZone === zoneId) setSelectedZone(null);
   };
 
-  // ===== Группы =====
   const createGroup = () => {
     if (!activeImage) return;
     const newGroup: Group = {
@@ -306,32 +295,6 @@ function App() {
     if (selectedGroup === groupId) setSelectedGroup(null);
   };
 
-  const assignZoneToGroup = (zoneId: string, groupId: string | null) => {
-    if (!activeImage) return;
-    const zone = activeImage.zones.find(z => z.id === zoneId);
-    if (!zone) return;
-
-    let newGroups = activeImage.groups;
-    // Убираем зону из старой группы
-    if (zone.groupId) {
-      newGroups = newGroups.map(g =>
-        g.id === zone.groupId ? { ...g, zoneIds: g.zoneIds.filter(id => id !== zoneId) } : g
-      );
-    }
-    // Добавляем в новую
-    if (groupId) {
-      newGroups = newGroups.map(g =>
-        g.id === groupId && !g.zoneIds.includes(zoneId)
-          ? { ...g, zoneIds: [...g.zoneIds, zoneId] }
-          : g
-      );
-    }
-    updateImage({
-      zones: activeImage.zones.map(z => z.id === zoneId ? { ...z, groupId } : z),
-      groups: newGroups,
-    });
-  };
-
   const toggleZoneInGroup = (groupId: string, zoneId: string) => {
     if (!activeImage) return;
     const group = activeImage.groups.find(g => g.id === groupId);
@@ -348,7 +311,6 @@ function App() {
     });
   };
 
-  // ===== Переход к области из вкладки документов =====
   const goToZone = (zoneId: string) => {
     setTab('canvas');
     setMode('select');
@@ -368,7 +330,6 @@ function App() {
     setHighlightUntil(Date.now() + 3000);
   };
 
-  // Эффект сброса подсветки
   useEffect(() => {
     if (!highlightZoneId) return;
     const timer = setTimeout(() => {
@@ -378,7 +339,6 @@ function App() {
     return () => clearTimeout(timer);
   }, [highlightZoneId]);
 
-  // ===== Горячие клавиши =====
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (editingImageName || renamingZoneId || showGroupModal) return;
@@ -417,7 +377,6 @@ function App() {
     };
   }, [selectedZone, activeImage, currentPoints, editingImageName, renamingZoneId, showGroupModal, tab, fitToScreen]);
 
-  // ===== Отрисовка canvas =====
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !activeImage) return;
@@ -435,7 +394,6 @@ function App() {
     const isHighlighting = highlightUntil > now;
     const pulse = isHighlighting ? 0.5 + 0.5 * Math.sin(now / 150) : 0;
 
-    // Зоны
     activeImage.zones.forEach((zone) => {
       if (!zone.visible) return;
       const category = CATEGORIES.find(c => c.id === zone.category);
@@ -467,7 +425,6 @@ function App() {
       ctx.setLineDash([]);
       ctx.stroke();
 
-      // Метка
       const centerX = zone.points.reduce((s, p) => s + p.x, 0) / zone.points.length;
       const centerY = zone.points.reduce((s, p) => s + p.y, 0) / zone.points.length;
       const fontSize = Math.max(10, 12 / zoom);
@@ -480,7 +437,6 @@ function App() {
       ctx.fillStyle = '#ffffff';
       ctx.fillText(zone.label, centerX, centerY);
 
-      // Эффект подсветки
       if (isHighlighted) {
         ctx.beginPath();
         ctx.moveTo(zone.points[0].x, zone.points[0].y);
@@ -496,7 +452,6 @@ function App() {
       }
     });
 
-    // Текущий полигон
     if (currentPoints.length > 0 && mode === 'draw') {
       const category = CATEGORIES.find(c => c.id === activeCategory);
       if (!category) return;
@@ -548,7 +503,6 @@ function App() {
       });
     }
 
-    // Анимация подсветки
     if (isHighlighting) {
       requestAnimationFrame(() => {
         const canvas = canvasRef.current;
@@ -557,7 +511,6 @@ function App() {
     }
   }, [activeImage, currentPoints, mousePos, activeCategory, selectedZone, selectedGroup, mode, zoom, highlightZoneId, highlightUntil]);
 
-  // Триггер перерисовки для анимации
   useEffect(() => {
     if (!highlightZoneId) return;
     let raf: number;
@@ -565,8 +518,7 @@ function App() {
       if (Date.now() < highlightUntil) {
         const canvas = canvasRef.current;
         if (canvas && activeImage) {
-          const evt = new Event('redraw');
-          canvas.dispatchEvent(evt);
+          canvas.dispatchEvent(new Event('redraw'));
         }
         raf = requestAnimationFrame(loop);
       }
@@ -575,7 +527,6 @@ function App() {
     return () => cancelAnimationFrame(raf);
   }, [highlightZoneId, highlightUntil, activeImage]);
 
-  // ===== Утилиты =====
   const isPointInPolygon = (point: Point, polygon: Point[]): boolean => {
     let inside = false;
     for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
@@ -597,7 +548,6 @@ function App() {
     }
   };
 
-  // ===== Экспорт/Импорт =====
   const exportData = () => {
     const data = {
       images: images.map(img => ({
@@ -610,8 +560,9 @@ function App() {
         groups: img.groups,
       })),
     };
+    const exportDataString = JSON.stringify(data, null, 2);
     setExportModal({
-       JSON.stringify(data, null, 2),
+      content: exportDataString,
       filename: 'zones-export.json', type: 'zones',
     });
   };
@@ -628,15 +579,16 @@ function App() {
       })),
     };
     const date = new Date().toISOString().slice(0, 10);
+    const projectDataString = JSON.stringify(projectData);
     setExportModal({
-       JSON.stringify(projectData),
+      content: projectDataString,
       filename: `project-${date}.zoneproj`, type: 'project',
     });
   };
 
   const downloadFromModal = () => {
     if (!exportModal) return;
-    const blob = new Blob([exportModal.data], { type: 'application/json' });
+    const blob = new Blob([exportModal.content], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url; a.download = exportModal.filename;
@@ -646,18 +598,18 @@ function App() {
 
   const openInNewTab = () => {
     if (!exportModal) return;
-    const blob = new Blob([exportModal.data], { type: 'application/json' });
+    const blob = new Blob([exportModal.content], { type: 'application/json' });
     window.open(URL.createObjectURL(blob), '_blank');
   };
 
   const copyToClipboard = async () => {
     if (!exportModal) return;
     try {
-      await navigator.clipboard.writeText(exportModal.data);
+      await navigator.clipboard.writeText(exportModal.content);
       alert('Скопировано!');
     } catch {
       const ta = document.createElement('textarea');
-      ta.value = exportModal.data;
+      ta.value = exportModal.content;
       document.body.appendChild(ta); ta.select();
       document.execCommand('copy');
       document.body.removeChild(ta);
@@ -777,13 +729,11 @@ function App() {
 
   const zoomPercent = Math.round(zoom * 100);
 
-  // ===== Рендер =====
   return (
     <div className="h-screen flex flex-col bg-gray-900 text-white overflow-hidden">
       <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleImageUpload} className="hidden" />
       <input ref={projectInputRef} type="file" accept=".zoneproj,.json" onChange={importProject} className="hidden" />
 
-      {/* Header */}
       <header className="bg-gray-800/95 backdrop-blur-sm border-b border-gray-700 px-4 py-2 flex items-center justify-between shrink-0 z-20">
         <div className="flex items-center gap-3">
           <div className="text-xl">🏗️</div>
@@ -792,29 +742,12 @@ function App() {
           </h1>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Вкладки */}
           <div className="flex bg-gray-700 rounded-lg p-0.5">
-            <button
-              onClick={() => setTab('canvas')}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                tab === 'canvas' ? 'bg-blue-600 text-white shadow' : 'text-gray-300 hover:text-white'
-              }`}
-            >
-              🗺️ Области
-            </button>
-            <button
-              onClick={() => setTab('docs')}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                tab === 'docs' ? 'bg-blue-600 text-white shadow' : 'text-gray-300 hover:text-white'
-              }`}
-            >
-              📑 Документы
-            </button>
+            <button onClick={() => setTab('canvas')} className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${tab === 'canvas' ? 'bg-blue-600 text-white shadow' : 'text-gray-300 hover:text-white'}`}>🗺️ Области</button>
+            <button onClick={() => setTab('docs')} className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${tab === 'docs' ? 'bg-blue-600 text-white shadow' : 'text-gray-300 hover:text-white'}`}>📑 Документы</button>
           </div>
 
-          <button onClick={() => fileInputRef.current?.click()} className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded-lg text-xs font-medium transition-colors">
-            📁 Загрузить
-          </button>
+          <button onClick={() => fileInputRef.current?.click()} className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded-lg text-xs font-medium transition-colors">📁 Загрузить</button>
 
           {images.length > 0 && (
             <>
@@ -848,9 +781,7 @@ function App() {
       </header>
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar */}
         <aside className="w-64 bg-gray-800/95 border-r border-gray-700 flex flex-col shrink-0 overflow-hidden z-10">
-          {/* Изображения */}
           <div className="p-3 border-b border-gray-700">
             <div className="flex items-center justify-between mb-2">
               <h2 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Изображения ({images.length})</h2>
@@ -859,31 +790,13 @@ function App() {
             <div className="space-y-1 max-h-40 overflow-y-auto">
               {images.length === 0 && <p className="text-gray-600 text-xs italic py-2">Нет изображений</p>}
               {images.map((img) => (
-                <div
-                  key={img.id}
-                  onClick={() => switchImage(img.id)}
-                  className={`flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-all group ${
-                    activeImageId === img.id ? 'bg-blue-600/20 ring-1 ring-blue-500/40' : 'hover:bg-white/5'
-                  }`}
-                >
+                <div key={img.id} onClick={() => switchImage(img.id)} className={`flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-all group ${activeImageId === img.id ? 'bg-blue-600/20 ring-1 ring-blue-500/40' : 'hover:bg-white/5'}`}>
                   <div className="w-8 h-8 rounded bg-gray-700 overflow-hidden shrink-0">
                     <img src={img.src} alt="" className="w-full h-full object-cover" />
                   </div>
                   <div className="flex-1 min-w-0">
                     {editingImageName === img.id ? (
-                      <input
-                        type="text" value={tempName}
-                        onChange={(e) => setTempName(e.target.value)}
-                        onBlur={confirmRename}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') confirmRename();
-                          if (e.key === 'Escape') { setEditingImageName(null); setTempName(''); }
-                          e.stopPropagation();
-                        }}
-                        autoFocus
-                        className="w-full bg-gray-700 text-xs px-1.5 py-0.5 rounded border border-blue-500 outline-none"
-                        onClick={(e) => e.stopPropagation()}
-                      />
+                      <input type="text" value={tempName} onChange={(e) => setTempName(e.target.value)} onBlur={confirmRename} onKeyDown={(e) => { if (e.key === 'Enter') confirmRename(); if (e.key === 'Escape') { setEditingImageName(null); setTempName(''); } e.stopPropagation(); }} autoFocus className="w-full bg-gray-700 text-xs px-1.5 py-0.5 rounded border border-blue-500 outline-none" onClick={(e) => e.stopPropagation()} />
                     ) : (
                       <div className="flex items-center gap-1">
                         <span className="text-xs font-medium truncate">{img.name}</span>
@@ -900,30 +813,20 @@ function App() {
 
           {tab === 'canvas' && activeImage && (
             <>
-              {/* Категории */}
               <div className="p-3 border-b border-gray-700">
                 <h2 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">Категории</h2>
                 <div className="space-y-1">
                   {CATEGORIES.map((cat, index) => (
-                    <button
-                      key={cat.id}
-                      onClick={() => { setActiveCategory(cat.id); setMode('draw'); if (currentPoints.length > 0) setCurrentPoints([]); }}
-                      className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg transition-all text-left ${
-                        activeCategory === cat.id ? 'bg-white/10' : 'hover:bg-white/5'
-                      }`}
-                    >
+                    <button key={cat.id} onClick={() => { setActiveCategory(cat.id); setMode('draw'); if (currentPoints.length > 0) setCurrentPoints([]); }} className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg transition-all text-left ${activeCategory === cat.id ? 'bg-white/10' : 'hover:bg-white/5'}`}>
                       <span className="w-3.5 h-3.5 rounded-sm shrink-0" style={{ backgroundColor: cat.color }}></span>
                       <span className="text-xs font-medium flex-1">{cat.name}</span>
                       <span className="text-[10px] text-gray-500 bg-gray-700/50 px-1.5 py-0.5 rounded">{index + 1}</span>
-                      <span className="text-[10px] font-bold text-gray-400 min-w-[16px] text-center">
-                        {activeImage.zones.filter(z => z.category === cat.id).length}
-                      </span>
+                      <span className="text-[10px] font-bold text-gray-400 min-w-[16px] text-center">{activeImage.zones.filter(z => z.category === cat.id).length}</span>
                     </button>
                   ))}
                 </div>
               </div>
 
-              {/* Группы */}
               <div className="p-3 border-b border-gray-700">
                 <div className="flex items-center justify-between mb-2">
                   <h2 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Группы ({activeImage.groups.length})</h2>
@@ -932,34 +835,19 @@ function App() {
                 <div className="space-y-1 max-h-32 overflow-y-auto">
                   {activeImage.groups.length === 0 && <p className="text-gray-600 text-xs italic">Нет групп</p>}
                   {activeImage.groups.map((group) => (
-                    <div
-                      key={group.id}
-                      onClick={() => setSelectedGroup(selectedGroup === group.id ? null : group.id)}
-                      className={`flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-all group ${
-                        selectedGroup === group.id ? 'bg-purple-600/20 ring-1 ring-purple-500/40' : 'hover:bg-white/5'
-                      }`}
-                    >
+                    <div key={group.id} onClick={() => setSelectedGroup(selectedGroup === group.id ? null : group.id)} className={`flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-all group ${selectedGroup === group.id ? 'bg-purple-600/20 ring-1 ring-purple-500/40' : 'hover:bg-white/5'}`}>
                       <span className="text-xs">📁</span>
                       <span className="text-xs font-medium flex-1 truncate">{group.name}</span>
                       <span className="text-[10px] text-gray-500">{group.zoneIds.length}</span>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setEditingGroup(group); setShowGroupModal(true); }}
-                        className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-blue-400 text-[10px]"
-                      >✎</button>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); deleteGroup(group.id); }}
-                        className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-red-400 text-xs"
-                      >✕</button>
+                      <button onClick={(e) => { e.stopPropagation(); setEditingGroup(group); setShowGroupModal(true); }} className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-blue-400 text-[10px]">✎</button>
+                      <button onClick={(e) => { e.stopPropagation(); deleteGroup(group.id); }} className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-red-400 text-xs">✕</button>
                     </div>
                   ))}
                 </div>
               </div>
 
-              {/* Области */}
               <div className="flex-1 overflow-y-auto p-3">
-                <h2 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">
-                  Области ({activeImage.zones.length})
-                </h2>
+                <h2 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">Области ({activeImage.zones.length})</h2>
                 {activeImage.zones.length === 0 ? (
                   <p className="text-gray-600 text-xs italic">Нарисуйте область</p>
                 ) : (
@@ -969,54 +857,19 @@ function App() {
                       const group = zone.groupId ? activeImage.groups.find(g => g.id === zone.groupId) : null;
                       const isRenaming = renamingZoneId === zone.id;
                       return (
-                        <div
-                          key={zone.id}
-                          onClick={() => { setSelectedZone(zone.id); setMode('select'); }}
-                          className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg cursor-pointer transition-all group ${
-                            selectedZone === zone.id ? 'bg-white/10 ring-1 ring-white/20' : 'hover:bg-white/5'
-                          } ${!zone.visible ? 'opacity-40' : ''}`}
-                        >
-                          <button
-                            onClick={(e) => { e.stopPropagation(); updateZone(zone.id, { visible: !zone.visible }); }}
-                            className="text-xs shrink-0 w-4"
-                            title={zone.visible ? 'Скрыть' : 'Показать'}
-                          >
+                        <div key={zone.id} onClick={() => { setSelectedZone(zone.id); setMode('select'); }} className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg cursor-pointer transition-all group ${selectedZone === zone.id ? 'bg-white/10 ring-1 ring-white/20' : 'hover:bg-white/5'} ${!zone.visible ? 'opacity-40' : ''}`}>
+                          <button onClick={(e) => { e.stopPropagation(); updateZone(zone.id, { visible: !zone.visible }); }} className="text-xs shrink-0 w-4" title={zone.visible ? 'Скрыть' : 'Показать'}>
                             {zone.visible ? '👁️' : '🚫'}
                           </button>
                           <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: category?.color }}></span>
                           {isRenaming ? (
-                            <input
-                              type="text" value={renameZoneValue}
-                              onChange={(e) => setRenameZoneValue(e.target.value)}
-                              onBlur={confirmRenameZone}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') confirmRenameZone();
-                                if (e.key === 'Escape') { setRenamingZoneId(null); setRenameZoneValue(''); }
-                                e.stopPropagation();
-                              }}
-                              autoFocus
-                              className="flex-1 bg-gray-700 text-xs px-1 py-0.5 rounded border border-blue-500 outline-none min-w-0"
-                              onClick={(e) => e.stopPropagation()}
-                            />
+                            <input type="text" value={renameZoneValue} onChange={(e) => setRenameZoneValue(e.target.value)} onBlur={confirmRenameZone} onKeyDown={(e) => { if (e.key === 'Enter') confirmRenameZone(); if (e.key === 'Escape') { setRenamingZoneId(null); setRenameZoneValue(''); } e.stopPropagation(); }} autoFocus className="flex-1 bg-gray-700 text-xs px-1 py-0.5 rounded border border-blue-500 outline-none min-w-0" onClick={(e) => e.stopPropagation()} />
                           ) : (
                             <span className="text-xs flex-1 truncate">{zone.label}</span>
                           )}
-                          {group && (
-                            <span className="text-[9px] text-purple-300 bg-purple-600/30 px-1 rounded shrink-0" title={group.name}>
-                              📁
-                            </span>
-                          )}
-                          {!isRenaming && (
-                            <button
-                              onClick={(e) => { e.stopPropagation(); startRenameZone(zone.id, zone.label); }}
-                              className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-blue-400 text-[10px]"
-                              title="Переименовать"
-                            >✎</button>
-                          )}
-                          <button
-                            onClick={(e) => { e.stopPropagation(); deleteZone(zone.id); }}
-                            className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-red-400 text-xs"
-                          >✕</button>
+                          {group && <span className="text-[9px] text-purple-300 bg-purple-600/30 px-1 rounded shrink-0" title={group.name}>📁</span>}
+                          {!isRenaming && <button onClick={(e) => { e.stopPropagation(); startRenameZone(zone.id, zone.label); }} className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-blue-400 text-[10px]" title="Переименовать">✎</button>}
+                          <button onClick={(e) => { e.stopPropagation(); deleteZone(zone.id); }} className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-red-400 text-xs">✕</button>
                         </div>
                       );
                     })}
@@ -1024,7 +877,6 @@ function App() {
                 )}
               </div>
 
-              {/* Инструкция */}
               <div className="p-3 border-t border-gray-700 bg-gray-800/50">
                 <h3 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5">Управление</h3>
                 <div className="grid grid-cols-1 gap-0.5 text-[10px] text-gray-500">
@@ -1043,80 +895,31 @@ function App() {
           {tab === 'docs' && (
             <div className="flex-1 p-3 overflow-y-auto">
               <h2 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">Документация</h2>
-              <p className="text-xs text-gray-400 leading-relaxed">
-                В этой вкладке отображаются все группы областей с привязанными документами.
-                Кликайте по областям для перехода к ним на плане.
-              </p>
-              <div className="mt-4 p-3 bg-gray-900/50 rounded-lg">
-                <h3 className="text-xs font-semibold text-gray-300 mb-2">📋 Как работать:</h3>
-                <ol className="text-[11px] text-gray-400 space-y-1 list-decimal list-inside">
-                  <li>Создайте области на плане</li>
-                  <li>Объедините их в группы</li>
-                  <li>Добавьте ссылки на PDF и таблицы</li>
-                  <li>Кликайте по областям для навигации</li>
-                </ol>
-              </div>
+              <p className="text-xs text-gray-400 leading-relaxed">В этой вкладке отображаются все группы областей с привязанными документами.</p>
             </div>
           )}
         </aside>
 
-        {/* Main content */}
         <main className="flex-1 relative overflow-hidden bg-gray-950">
           {tab === 'canvas' ? (
-            <div
-              ref={viewportRef}
-              className={`absolute inset-0 select-none ${
-                isPanning || spaceHeld ? 'cursor-grabbing' : (mode === 'draw' ? 'cursor-crosshair' : 'cursor-pointer')
-              }`}
-              onMouseDown={handleMouseDown}
-              onMouseMove={handleMouseMove}
-              onMouseUp={handleMouseUp}
-              onMouseLeave={() => { setIsPanning(false); setMousePos(null); }}
-              onContextMenu={(e) => { e.preventDefault(); if (currentPoints.length > 0) setCurrentPoints([]); }}
-            >
-              <div className="absolute inset-0 opacity-5" style={{
-                backgroundImage: 'radial-gradient(circle, #ffffff 1px, transparent 1px)',
-                backgroundSize: '20px 20px'
-              }}></div>
+            <div ref={viewportRef} className={`absolute inset-0 select-none ${isPanning || spaceHeld ? 'cursor-grabbing' : (mode === 'draw' ? 'cursor-crosshair' : 'cursor-pointer')}`} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={() => { setIsPanning(false); setMousePos(null); }} onContextMenu={(e) => { e.preventDefault(); if (currentPoints.length > 0) setCurrentPoints([]); }}>
+              <div className="absolute inset-0 opacity-5" style={{ backgroundImage: 'radial-gradient(circle, #ffffff 1px, transparent 1px)', backgroundSize: '20px 20px' }}></div>
 
               {!activeImage ? (
                 <div className="absolute inset-0 flex items-center justify-center p-8">
                   <div className="text-center max-w-md">
-                    <div
-                      onClick={() => fileInputRef.current?.click()}
-                      className="border-2 border-dashed border-gray-700 rounded-2xl p-10 cursor-pointer hover:border-blue-500/50 hover:bg-gray-800/30 transition-all group mb-4"
-                    >
+                    <div onClick={() => fileInputRef.current?.click()} className="border-2 border-dashed border-gray-700 rounded-2xl p-10 cursor-pointer hover:border-blue-500/50 hover:bg-gray-800/30 transition-all group mb-4">
                       <div className="text-5xl mb-4 group-hover:scale-110 transition-transform">🖼️</div>
                       <h2 className="text-lg font-semibold text-gray-300 mb-2">Загрузите изображение</h2>
                       <p className="text-gray-500 text-sm mb-4">План помещения для разметки зон</p>
-                      <div className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600/20 border border-blue-500/30 rounded-lg text-blue-400 text-sm">
-                        <span>📁</span><span>Выбрать файл</span>
-                      </div>
+                      <div className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600/20 border border-blue-500/30 rounded-lg text-blue-400 text-sm"><span>📁</span><span>Выбрать файл</span></div>
                     </div>
-                    <button
-                      onClick={() => projectInputRef.current?.click()}
-                      className="inline-flex items-center gap-2 px-5 py-2.5 bg-purple-600/20 border border-purple-500/30 rounded-lg text-purple-400 text-sm hover:bg-purple-600/30 transition-all"
-                    >
-                      <span>📂</span><span>Открыть проект</span>
-                    </button>
+                    <button onClick={() => projectInputRef.current?.click()} className="inline-flex items-center gap-2 px-5 py-2.5 bg-purple-600/20 border border-purple-500/30 rounded-lg text-purple-400 text-sm hover:bg-purple-600/30 transition-all"><span>📂</span><span>Открыть проект</span></button>
                   </div>
                 </div>
               ) : (
-                <div style={{
-                  position: 'absolute', left: pan.x, top: pan.y,
-                  transformOrigin: '0 0', transform: `scale(${zoom})`,
-                }}>
-                  <canvas
-                    ref={canvasRef}
-                    width={activeImage.canvasSize.width}
-                    height={activeImage.canvasSize.height}
-                    onClick={handleCanvasClick}
-                    className="rounded shadow-2xl"
-                    style={{
-                      display: 'block', imageRendering: 'auto',
-                      boxShadow: '0 0 0 1px rgba(255,255,255,0.1), 0 25px 50px -12px rgba(0,0,0,0.8)',
-                    }}
-                  />
+                <div style={{ position: 'absolute', left: pan.x, top: pan.y, transformOrigin: '0 0', transform: `scale(${zoom})` }}>
+                  <canvas ref={canvasRef} width={activeImage.canvasSize.width} height={activeImage.canvasSize.height} onClick={handleCanvasClick} className="rounded shadow-2xl" style={{ display: 'block', imageRendering: 'auto', boxShadow: '0 0 0 1px rgba(255,255,255,0.1), 0 25px 50px -12px rgba(0,0,0,0.8)' }} />
                 </div>
               )}
 
@@ -1128,54 +931,34 @@ function App() {
                   <span className="text-gray-300">{CATEGORIES.find(c => c.id === activeCategory)?.name}</span>
                   <span className="text-gray-600">•</span>
                   <span className="text-gray-400">{mode === 'draw' ? '✏️' : '👆'}</span>
-                  {currentPoints.length > 0 && mode === 'draw' && (
-                    <>
-                      <span className="text-gray-600">•</span>
-                      <span className="text-yellow-400">{currentPoints.length}т{currentPoints.length >= 3 && ' → замкните'}</span>
-                    </>
-                  )}
+                  {currentPoints.length > 0 && mode === 'draw' && (<><span className="text-gray-600">•</span><span className="text-yellow-400">{currentPoints.length}т{currentPoints.length >= 3 && ' → замкните'}</span></>)}
                   <span className="text-gray-600">•</span>
                   <span className="text-gray-400">{zoomPercent}%</span>
                 </div>
               )}
             </div>
           ) : (
-            // Вкладка документов
             <div className="absolute inset-0 overflow-auto p-6">
               {!activeImage ? (
-                <div className="text-center py-20">
-                  <div className="text-5xl mb-4 opacity-30">📑</div>
-                  <p className="text-gray-500">Загрузите изображение для работы с документами</p>
-                </div>
+                <div className="text-center py-20"><div className="text-5xl mb-4 opacity-30">📑</div><p className="text-gray-500">Загрузите изображение</p></div>
               ) : (
                 <div className="max-w-6xl mx-auto">
                   <div className="flex items-center justify-between mb-6">
                     <div>
                       <h2 className="text-2xl font-bold text-white">📑 Документация</h2>
-                      <p className="text-sm text-gray-400 mt-1">
-                        {activeImage.name} · {activeImage.groups.length} групп · {activeImage.zones.length} областей
-                      </p>
+                      <p className="text-sm text-gray-400 mt-1">{activeImage.name} · {activeImage.groups.length} групп · {activeImage.zones.length} областей</p>
                     </div>
-                    <button onClick={createGroup} className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg text-sm font-medium transition-colors">
-                      + Новая группа
-                    </button>
+                    <button onClick={createGroup} className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg text-sm font-medium transition-colors">+ Новая группа</button>
                   </div>
 
                   {activeImage.groups.length === 0 && activeImage.zones.length === 0 ? (
                     <div className="text-center py-16 bg-gray-800/30 rounded-xl border border-gray-700">
                       <div className="text-4xl mb-3 opacity-50">📋</div>
                       <p className="text-gray-400 mb-2">Нет данных</p>
-                      <p className="text-sm text-gray-500">Создайте области на плане и объедините их в группы</p>
-                      <button
-                        onClick={() => setTab('canvas')}
-                        className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm transition-colors"
-                      >
-                        Перейти к областям
-                      </button>
+                      <button onClick={() => setTab('canvas')} className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm transition-colors">Перейти к областям</button>
                     </div>
                   ) : (
                     <div className="space-y-4">
-                      {/* Группы с документами */}
                       {activeImage.groups.map((group) => {
                         const groupZones = activeImage.zones.filter(z => group.zoneIds.includes(z.id));
                         return (
@@ -1185,87 +968,40 @@ function App() {
                                 <div className="flex items-center gap-2 mb-1">
                                   <span className="text-lg">📁</span>
                                   <h3 className="text-lg font-semibold text-white">{group.name}</h3>
-                                  <button
-                                    onClick={() => { setEditingGroup(group); setShowGroupModal(true); }}
-                                    className="text-xs text-gray-400 hover:text-blue-400 transition-colors"
-                                  >
-                                    ✎ Редактировать
-                                  </button>
+                                  <button onClick={() => { setEditingGroup(group); setShowGroupModal(true); }} className="text-xs text-gray-400 hover:text-blue-400 transition-colors">✎ Редактировать</button>
                                 </div>
-                                {group.notes && (
-                                  <p className="text-sm text-gray-400 mt-1">{group.notes}</p>
-                                )}
+                                {group.notes && <p className="text-sm text-gray-400 mt-1">{group.notes}</p>}
                               </div>
-                              <div className="flex items-center gap-2">
-                                <button
-                                  onClick={() => goToGroup(group.id)}
-                                  className="px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 rounded-lg text-xs text-blue-400 transition-colors"
-                                  title="Показать на плане"
-                                >
-                                  🗺️ На плане
-                                </button>
-                              </div>
+                              <button onClick={() => goToGroup(group.id)} className="px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 rounded-lg text-xs text-blue-400 transition-colors" title="Показать на плане">🗺️ На плане</button>
                             </div>
 
-                            {/* Ссылки на документы */}
                             <div className="p-4 border-b border-gray-700 bg-gray-900/30 grid grid-cols-1 md:grid-cols-2 gap-3">
                               <div>
-                                <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1 block">
-                                  📄 PDF документ
-                                </label>
+                                <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1 block">📄 PDF документ</label>
                                 {group.pdfUrl ? (
-                                  <a
-                                    href={group.pdfUrl}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-flex items-center gap-2 px-3 py-2 bg-red-600/20 hover:bg-red-600/30 border border-red-500/30 rounded-lg text-xs text-red-300 transition-colors"
-                                  >
-                                    <span>📕</span>
-                                    <span className="truncate max-w-[200px]">{group.pdfUrl}</span>
-                                    <span>↗</span>
+                                  <a href={group.pdfUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-3 py-2 bg-red-600/20 hover:bg-red-600/30 border border-red-500/30 rounded-lg text-xs text-red-300 transition-colors">
+                                    <span>📕</span><span className="truncate max-w-[200px]">{group.pdfUrl}</span><span>↗</span>
                                   </a>
-                                ) : (
-                                  <span className="text-xs text-gray-600 italic">Не указана</span>
-                                )}
+                                ) : <span className="text-xs text-gray-600 italic">Не указана</span>}
                               </div>
                               <div>
-                                <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1 block">
-                                  📊 Таблица
-                                </label>
+                                <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1 block">📊 Таблица</label>
                                 {group.tableUrl ? (
-                                  <a
-                                    href={group.tableUrl}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-flex items-center gap-2 px-3 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 rounded-lg text-xs text-emerald-300 transition-colors"
-                                  >
-                                    <span>📗</span>
-                                    <span className="truncate max-w-[200px]">{group.tableUrl}</span>
-                                    <span>↗</span>
+                                  <a href={group.tableUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-3 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 rounded-lg text-xs text-emerald-300 transition-colors">
+                                    <span>📗</span><span className="truncate max-w-[200px]">{group.tableUrl}</span><span>↗</span>
                                   </a>
-                                ) : (
-                                  <span className="text-xs text-gray-600 italic">Не указана</span>
-                                )}
+                                ) : <span className="text-xs text-gray-600 italic">Не указана</span>}
                               </div>
                             </div>
 
-                            {/* Области в группе */}
                             <div className="p-4">
-                              <h4 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">
-                                Области в группе ({groupZones.length})
-                              </h4>
-                              {groupZones.length === 0 ? (
-                                <p className="text-xs text-gray-600 italic">Нет областей</p>
-                              ) : (
+                              <h4 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">Области в группе ({groupZones.length})</h4>
+                              {groupZones.length === 0 ? <p className="text-xs text-gray-600 italic">Нет областей</p> : (
                                 <div className="flex flex-wrap gap-2">
                                   {groupZones.map((zone) => {
                                     const category = CATEGORIES.find(c => c.id === zone.category);
                                     return (
-                                      <button
-                                        key={zone.id}
-                                        onClick={() => goToZone(zone.id)}
-                                        className="flex items-center gap-2 px-3 py-1.5 bg-gray-700/50 hover:bg-gray-700 border border-gray-600 hover:border-blue-500/50 rounded-lg text-xs transition-all group"
-                                      >
+                                      <button key={zone.id} onClick={() => goToZone(zone.id)} className="flex items-center gap-2 px-3 py-1.5 bg-gray-700/50 hover:bg-gray-700 border border-gray-600 hover:border-blue-500/50 rounded-lg text-xs transition-all group">
                                         <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: category?.color }}></span>
                                         <span className="text-gray-200">{zone.label}</span>
                                         <span className="text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity">→</span>
@@ -1279,21 +1015,14 @@ function App() {
                         );
                       })}
 
-                      {/* Области без группы */}
                       {activeImage.zones.filter(z => !z.groupId).length > 0 && (
                         <div className="bg-gray-800/30 rounded-xl border border-dashed border-gray-700 p-4">
-                          <h3 className="text-sm font-semibold text-gray-400 mb-3">
-                            ⚠️ Области без группы ({activeImage.zones.filter(z => !z.groupId).length})
-                          </h3>
+                          <h3 className="text-sm font-semibold text-gray-400 mb-3">⚠️ Области без группы ({activeImage.zones.filter(z => !z.groupId).length})</h3>
                           <div className="flex flex-wrap gap-2">
                             {activeImage.zones.filter(z => !z.groupId).map((zone) => {
                               const category = CATEGORIES.find(c => c.id === zone.category);
                               return (
-                                <button
-                                  key={zone.id}
-                                  onClick={() => goToZone(zone.id)}
-                                  className="flex items-center gap-2 px-3 py-1.5 bg-gray-700/30 hover:bg-gray-700 border border-gray-600 hover:border-blue-500/50 rounded-lg text-xs transition-all group"
-                                >
+                                <button key={zone.id} onClick={() => goToZone(zone.id)} className="flex items-center gap-2 px-3 py-1.5 bg-gray-700/30 hover:bg-gray-700 border border-gray-600 hover:border-blue-500/50 rounded-lg text-xs transition-all group">
                                   <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: category?.color }}></span>
                                   <span className="text-gray-300">{zone.label}</span>
                                   <span className="text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity">→</span>
@@ -1312,47 +1041,27 @@ function App() {
         </main>
       </div>
 
-      {/* Модальное окно редактирования группы */}
       {showGroupModal && editingGroup && activeImage && (
-        <GroupModal
-          group={editingGroup}
-          allZones={activeImage.zones}
-          onSave={(patch) => {
-            updateGroup(editingGroup.id, patch);
-            setShowGroupModal(false);
-            setEditingGroup(null);
-          }}
-          onClose={() => { setShowGroupModal(false); setEditingGroup(null); }}
-          onToggleZone={(zoneId) => toggleZoneInGroup(editingGroup.id, zoneId)}
-        />
+        <GroupModal group={editingGroup} allZones={activeImage.zones} onSave={(patch) => { updateGroup(editingGroup.id, patch); setShowGroupModal(false); setEditingGroup(null); }} onClose={() => { setShowGroupModal(false); setEditingGroup(null); }} onToggleZone={(zoneId) => toggleZoneInGroup(editingGroup.id, zoneId)} />
       )}
 
-      {/* Модальное окно экспорта */}
       {exportModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-gray-800 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col">
             <div className="flex items-center justify-between p-4 border-b border-gray-700">
-              <h2 className="text-lg font-semibold text-white">
-                {exportModal.type === 'project' ? '📦 Сохранение проекта' : '💾 Экспорт'}
-              </h2>
+              <h2 className="text-lg font-semibold text-white">{exportModal.type === 'project' ? '📦 Сохранение проекта' : '💾 Экспорт'}</h2>
               <button onClick={() => setExportModal(null)} className="text-gray-400 hover:text-white text-xl">✕</button>
             </div>
             <div className="p-4 flex-1 overflow-hidden flex flex-col">
-              <p className="text-sm text-gray-400 mb-1">
-                Файл: <span className="text-white font-mono">{exportModal.filename}</span>
-              </p>
-              <p className="text-sm text-gray-400 mb-3">
-                Размер: <span className="text-white">{(exportModal.data.length / 1024).toFixed(1)} KB</span>
-              </p>
+              <p className="text-sm text-gray-400 mb-1">Файл: <span className="text-white font-mono">{exportModal.filename}</span></p>
+              <p className="text-sm text-gray-400 mb-3">Размер: <span className="text-white">{(exportModal.content.length / 1024).toFixed(1)} KB</span></p>
               <div className="flex gap-2 mb-4">
                 <button onClick={downloadFromModal} className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium">⬇️ Скачать</button>
                 <button onClick={openInNewTab} className="flex-1 px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg text-sm font-medium">🔗 Вкладка</button>
                 <button onClick={copyToClipboard} className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg text-sm font-medium">📋 Копировать</button>
               </div>
               <div className="flex-1 overflow-auto bg-gray-900 rounded-lg p-3">
-                <pre className="text-xs text-gray-300 font-mono whitespace-pre-wrap break-all">
-                  {exportModal.data.length > 50000 ? exportModal.data.slice(0, 50000) + '\n\n... (обрезано)' : exportModal.data}
-                </pre>
+                <pre className="text-xs text-gray-300 font-mono whitespace-pre-wrap break-all">{exportModal.content.length > 50000 ? exportModal.content.slice(0, 50000) + '\n\n... (обрезано)' : exportModal.content}</pre>
               </div>
             </div>
             <div className="p-4 border-t border-gray-700 flex justify-end">
@@ -1365,16 +1074,7 @@ function App() {
   );
 }
 
-// ===== Модальное окно группы =====
-function GroupModal({
-  group, allZones, onSave, onClose, onToggleZone,
-}: {
-  group: Group;
-  allZones: Zone[];
-  onSave: (patch: Partial<Group>) => void;
-  onClose: () => void;
-  onToggleZone: (zoneId: string) => void;
-}) {
+function GroupModal({ group, allZones, onSave, onClose, onToggleZone }: { group: Group; allZones: Zone[]; onSave: (patch: Partial<Group>) => void; onClose: () => void; onToggleZone: (zoneId: string) => void; }) {
   const [name, setName] = useState(group.name);
   const [pdfUrl, setPdfUrl] = useState(group.pdfUrl);
   const [tableUrl, setTableUrl] = useState(group.tableUrl);
@@ -1387,67 +1087,34 @@ function GroupModal({
           <h2 className="text-lg font-semibold text-white">📁 Редактирование группы</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-white text-xl">✕</button>
         </div>
-
         <div className="p-4 flex-1 overflow-y-auto space-y-4">
           <div>
             <label className="text-xs font-semibold text-gray-400 mb-1 block">Название группы</label>
-            <input
-              type="text" value={name} onChange={(e) => setName(e.target.value)}
-              className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500"
-              placeholder="Например: 1 этаж, секция А"
-            />
+            <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500" placeholder="Например: 1 этаж, секция А" />
           </div>
-
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-semibold text-gray-400 mb-1 block">📄 Ссылка на PDF</label>
-              <input
-                type="url" value={pdfUrl} onChange={(e) => setPdfUrl(e.target.value)}
-                className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500"
-                placeholder="https://... или путь к файлу"
-              />
+              <input type="url" value={pdfUrl} onChange={(e) => setPdfUrl(e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500" placeholder="https://..." />
             </div>
             <div>
               <label className="text-xs font-semibold text-gray-400 mb-1 block">📊 Ссылка на таблицу</label>
-              <input
-                type="url" value={tableUrl} onChange={(e) => setTableUrl(e.target.value)}
-                className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500"
-                placeholder="https://... или путь к файлу"
-              />
+              <input type="url" value={tableUrl} onChange={(e) => setTableUrl(e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500" placeholder="https://..." />
             </div>
           </div>
-
           <div>
             <label className="text-xs font-semibold text-gray-400 mb-1 block">📝 Заметки</label>
-            <textarea
-              value={notes} onChange={(e) => setNotes(e.target.value)}
-              rows={3}
-              className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500 resize-none"
-              placeholder="Описание работ, объёмы, даты..."
-            />
+            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500 resize-none" placeholder="Описание работ..." />
           </div>
-
           <div>
-            <label className="text-xs font-semibold text-gray-400 mb-2 block">
-              Области в группе ({group.zoneIds.length})
-            </label>
-            {allZones.length === 0 ? (
-              <p className="text-xs text-gray-600 italic">Нет областей. Создайте их на плане.</p>
-            ) : (
+            <label className="text-xs font-semibold text-gray-400 mb-2 block">Области в группе ({group.zoneIds.length})</label>
+            {allZones.length === 0 ? <p className="text-xs text-gray-600 italic">Нет областей</p> : (
               <div className="grid grid-cols-2 gap-1.5 max-h-48 overflow-y-auto bg-gray-900/50 rounded-lg p-2">
                 {allZones.map((zone) => {
                   const category = CATEGORIES.find(c => c.id === zone.category);
                   const isInGroup = group.zoneIds.includes(zone.id);
                   return (
-                    <button
-                      key={zone.id}
-                      onClick={() => onToggleZone(zone.id)}
-                      className={`flex items-center gap-2 px-2 py-1.5 rounded text-xs text-left transition-all ${
-                        isInGroup
-                          ? 'bg-purple-600/30 border border-purple-500/50'
-                          : 'bg-gray-800 hover:bg-gray-700 border border-transparent'
-                      }`}
-                    >
+                    <button key={zone.id} onClick={() => onToggleZone(zone.id)} className={`flex items-center gap-2 px-2 py-1.5 rounded text-xs text-left transition-all ${isInGroup ? 'bg-purple-600/30 border border-purple-500/50' : 'bg-gray-800 hover:bg-gray-700 border border-transparent'}`}>
                       <span className={`w-3 h-3 rounded-sm shrink-0 border-2 ${isInGroup ? 'bg-purple-500 border-purple-400' : 'border-gray-600'}`}></span>
                       <span className="w-2 h-2 rounded-sm shrink-0" style={{ backgroundColor: category?.color }}></span>
                       <span className="flex-1 truncate">{zone.label}</span>
@@ -1458,15 +1125,9 @@ function GroupModal({
             )}
           </div>
         </div>
-
         <div className="p-4 border-t border-gray-700 flex justify-end gap-2">
           <button onClick={onClose} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm font-medium">Отмена</button>
-          <button
-            onClick={() => onSave({ name: name.trim() || 'Без имени', pdfUrl, tableUrl, notes })}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium"
-          >
-            Сохранить
-          </button>
+          <button onClick={() => onSave({ name: name.trim() || 'Без имени', pdfUrl, tableUrl, notes })} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium">Сохранить</button>
         </div>
       </div>
     </div>
