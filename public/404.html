@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Redirecting...</title>
+  <script>
+    // Сохраняем путь для восстановления после редиректа
+    const path = window.location.pathname;
+    const search = window.location.search;
+    const hash = window.location.hash;
+    
+    // Определяем базовый путь репозитория
+    const repoName = window.location.pathname.split('/')[1];
+    const basePath = repoName ? `/${repoName}/` : '/';
+    
+    // Перенаправляем на главную с сохранением пути
+    sessionStorage.redirect = path + search + hash;
+    window.location.replace(basePath);
+  </script>
+</head>
+<body>
+  <p>Redirecting...</p>
+</body>
+</html>
