@@ -460,7 +460,7 @@ function App() {
   };
 
   // Экспорт данных (синхронно — работает в sandbox)
-  const exportData = () => {
+  const exportData = async () => {
     const data = {
       images: images.map(img => ({
         name: img.name,
@@ -474,23 +474,64 @@ function App() {
     };
     const content = JSON.stringify(data, null, 2);
     const fileName = 'zones-export.json';
-
     const blob = new Blob([content], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fileName;
-    a.style.display = 'none';
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => {
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    }, 3000);
+
+    // Пробуем File System Access API (работает в Chrome/Edge)
+    if ('showSaveFilePicker' in window) {
+      try {
+        const handle = await (window as any).showSaveFilePicker({
+          suggestedName: fileName,
+          types: [
+            {
+              description: 'JSON File',
+              accept: { 'application/json': ['.json'] },
+            },
+          ],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        return;
+      } catch (err: any) {
+        if (err.name === 'AbortError') return; // Пользователь отменил
+        // Fallback если ошибка
+      }
+    }
+
+    // Fallback 1: blob URL + <a> в DOM
+    try {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 3000);
+      return;
+    } catch {
+      // Fallback 2: data URL (для sandbox)
+    }
+
+    // Fallback 2: data URL
+    const reader = new FileReader();
+    reader.onload = () => {
+      const a = document.createElement('a');
+      a.href = reader.result as string;
+      a.download = fileName;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => document.body.removeChild(a), 100);
+    };
+    reader.readAsDataURL(blob);
   };
 
-  // Экспорт полного проекта (синхронно — работает в sandbox)
-  const exportProject = () => {
+  // Экспорт полного проекта (с File System Access API)
+  const exportProject = async () => {
     const projectData = {
       version: '1.0',
       exportedAt: new Date().toISOString(),
@@ -512,19 +553,60 @@ function App() {
     const content = JSON.stringify(projectData);
     const date = new Date().toISOString().slice(0, 10);
     const fileName = `project-${date}.zoneproj`;
-
     const blob = new Blob([content], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fileName;
-    a.style.display = 'none';
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => {
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    }, 3000);
+
+    // Пробуем File System Access API (работает в Chrome/Edge)
+    if ('showSaveFilePicker' in window) {
+      try {
+        const handle = await (window as any).showSaveFilePicker({
+          suggestedName: fileName,
+          types: [
+            {
+              description: 'Zone Project File',
+              accept: { 'application/json': ['.zoneproj'] },
+            },
+          ],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        return;
+      } catch (err: any) {
+        if (err.name === 'AbortError') return; // Пользователь отменил
+        // Fallback если ошибка
+      }
+    }
+
+    // Fallback 1: blob URL + <a> в DOM
+    try {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 3000);
+      return;
+    } catch {
+      // Fallback 2: data URL (для sandbox)
+    }
+
+    // Fallback 2: data URL
+    const reader = new FileReader();
+    reader.onload = () => {
+      const a = document.createElement('a');
+      a.href = reader.result as string;
+      a.download = fileName;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => document.body.removeChild(a), 100);
+    };
+    reader.readAsDataURL(blob);
   };
 
   // Удаление изображения
