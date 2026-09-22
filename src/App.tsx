@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 
-// Типы
 interface Point {
   x: number;
   y: number;
@@ -49,7 +48,6 @@ function App() {
   const [mode, setMode] = useState<'draw' | 'select'>('draw');
   const [editingImageName, setEditingImageName] = useState<string | null>(null);
   const [tempName, setTempName] = useState('');
-  const [exportModal, setExportModal] = useState<{ data: string; filename: string; type: string } | null>(null);
 
   // Zoom/Pan state
   const [zoom, setZoom] = useState(1);
@@ -191,7 +189,7 @@ function App() {
     return () => viewport.removeEventListener('wheel', handleWheelEvent);
   }, [activeImage]);
 
-  // Pan
+  // Pan — средняя кнопка мыши или Space + ЛКМ
   const handleMouseDown = (e: React.MouseEvent) => {
     mouseDownPos.current = { x: e.clientX, y: e.clientY };
     setDragDistance(0);
@@ -243,6 +241,7 @@ function App() {
       return;
     }
 
+    // Режим рисования - проверка замыкания
     if (currentPoints.length >= 3) {
       const firstPoint = currentPoints[0];
       const distance = Math.sqrt(
@@ -265,12 +264,14 @@ function App() {
     setCurrentPoints([...currentPoints, point]);
   };
 
+  // Обновление зон активного изображения
   const updateImageZones = (zones: Zone[]) => {
     setImages(prev => prev.map(img =>
       img.id === activeImageId ? { ...img, zones } : img
     ));
   };
 
+  // Правый клик - отмена
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
     if (currentPoints.length > 0) {
@@ -308,7 +309,6 @@ function App() {
       const num = parseInt(e.key);
       if (num >= 1 && num <= 5) {
         setActiveCategory(CATEGORIES[num - 1].id);
-        setMode('draw');
       }
       if (e.key === '0' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
@@ -344,7 +344,7 @@ function App() {
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(activeImage.img, 0, 0, canvas.width, canvas.height);
 
-    // Зоны
+    // Рисуем зоны
     activeImage.zones.forEach((zone) => {
       const category = CATEGORIES.find(c => c.id === zone.category);
       if (!category) return;
@@ -364,6 +364,7 @@ function App() {
       ctx.setLineDash([]);
       ctx.stroke();
 
+      // Метка
       const centerX = zone.points.reduce((sum, p) => sum + p.x, 0) / zone.points.length;
       const centerY = zone.points.reduce((sum, p) => sum + p.y, 0) / zone.points.length;
       const fontSize = Math.max(10, 12 / zoom);
@@ -394,6 +395,7 @@ function App() {
         ctx.fill();
       }
 
+      // Линии между точками
       if (currentPoints.length >= 2) {
         ctx.beginPath();
         ctx.moveTo(currentPoints[0].x, currentPoints[0].y);
@@ -406,6 +408,7 @@ function App() {
         ctx.stroke();
       }
 
+      // Пунктир до курсора
       if (mousePos && currentPoints.length >= 1) {
         ctx.beginPath();
         ctx.moveTo(currentPoints[currentPoints.length - 1].x, currentPoints[currentPoints.length - 1].y);
@@ -415,19 +418,9 @@ function App() {
         ctx.setLineDash([6 / zoom, 4 / zoom]);
         ctx.stroke();
         ctx.setLineDash([]);
-
-        if (currentPoints.length >= 3) {
-          ctx.beginPath();
-          ctx.moveTo(mousePos.x, mousePos.y);
-          ctx.lineTo(currentPoints[0].x, currentPoints[0].y);
-          ctx.strokeStyle = category.color + '60';
-          ctx.lineWidth = 1 / zoom;
-          ctx.setLineDash([4 / zoom, 4 / zoom]);
-          ctx.stroke();
-          ctx.setLineDash([]);
-        }
       }
 
+      // Точки
       currentPoints.forEach((point, index) => {
         const isFirst = index === 0 && currentPoints.length >= 3;
         const radius = (isFirst ? 8 : 5) / zoom;
@@ -448,42 +441,25 @@ function App() {
           ctx.stroke();
         }
       });
-
-      if (mousePos && currentPoints.length >= 3) {
-        const firstPoint = currentPoints[0];
-        const distance = Math.sqrt(
-          Math.pow(mousePos.x - firstPoint.x, 2) + Math.pow(mousePos.y - firstPoint.y, 2)
-        );
-        const snapRadius = 15 / zoom;
-        if (distance < snapRadius) {
-          ctx.beginPath();
-          ctx.arc(firstPoint.x, firstPoint.y, snapRadius, 0, Math.PI * 2);
-          ctx.strokeStyle = '#ffffff';
-          ctx.lineWidth = 2 / zoom;
-          ctx.setLineDash([4 / zoom, 4 / zoom]);
-          ctx.stroke();
-          ctx.setLineDash([]);
-        }
-      }
     }
   }, [activeImage, currentPoints, mousePos, activeCategory, selectedZone, mode, zoom]);
 
+  // Удаление зоны
   const deleteZone = (zoneId: string) => {
     if (!activeImage) return;
     updateImageZones(activeImage.zones.filter(z => z.id !== zoneId));
     if (selectedZone === zoneId) setSelectedZone(null);
   };
 
+  // Очистка всех зон
   const clearAllZones = () => {
     if (!activeImage) return;
-    if (window.confirm('Удалить все выделенные области на этом изображении?')) {
-      updateImageZones([]);
-      setCurrentPoints([]);
-      setSelectedZone(null);
-    }
+    updateImageZones([]);
+    setCurrentPoints([]);
+    setSelectedZone(null);
   };
 
-  // Экспорт только зон
+  // Экспорт данных (синхронно — работает в sandbox)
   const exportData = () => {
     const data = {
       images: images.map(img => ({
@@ -496,14 +472,24 @@ function App() {
         })),
       })),
     };
-    setExportModal({
-      data: JSON.stringify(data, null, 2),
-      filename: 'zones-export.json',
-      type: 'zones'
-    });
+    const content = JSON.stringify(data, null, 2);
+    const fileName = 'zones-export.json';
+
+    const blob = new Blob([content], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 3000);
   };
 
-  // Экспорт полного проекта
+  // Экспорт полного проекта (синхронно — работает в sandbox)
   const exportProject = () => {
     const projectData = {
       version: '1.0',
@@ -523,47 +509,30 @@ function App() {
         })),
       })),
     };
+    const content = JSON.stringify(projectData);
     const date = new Date().toISOString().slice(0, 10);
-    setExportModal({
-      data: JSON.stringify(projectData),
-      filename: `project-${date}.zoneproj`,
-      type: 'project'
-    });
-  };
+    const fileName = `project-${date}.zoneproj`;
 
-  const downloadFromModal = () => {
-    if (!exportModal) return;
-    const blob = new Blob([exportModal.data], { type: 'application/json' });
+    const blob = new Blob([content], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = exportModal.filename;
+    a.download = fileName;
+    a.style.display = 'none';
     document.body.appendChild(a);
     a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 3000);
   };
 
-  const openInNewTab = () => {
-    if (!exportModal) return;
-    const blob = new Blob([exportModal.data], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    window.open(url, '_blank');
-  };
-
-  const copyToClipboard = async () => {
-    if (!exportModal) return;
-    try {
-      await navigator.clipboard.writeText(exportModal.data);
-      alert('Скопировано в буфер обмена!');
-    } catch {
-      const textarea = document.createElement('textarea');
-      textarea.value = exportModal.data;
-      document.body.appendChild(textarea);
-      textarea.select();
-      document.execCommand('copy');
-      document.body.removeChild(textarea);
-      alert('Скопировано в буфер обмена!');
+  // Удаление изображения
+  const deleteImage = (id: string) => {
+    setImages(prev => prev.filter(img => img.id !== id));
+    if (activeImageId === id) {
+      const remaining = images.filter(img => img.id !== id);
+      setActiveImageId(remaining.length > 0 ? remaining[0].id : null);
     }
   };
 
@@ -578,7 +547,6 @@ function App() {
         const data = JSON.parse(event.target?.result as string);
 
         if (!data.images || !Array.isArray(data.images)) {
-          alert('Неверный формат файла проекта');
           return;
         }
 
@@ -625,14 +593,12 @@ function App() {
                 fitToScreen(activeImg.img.width, activeImg.img.height);
               }
             }, 100);
-
-            alert(`Проект загружен: ${loadedImages.length} изобр., ${loadedImages.reduce((sum, i) => sum + i.zones.length, 0)} областей`);
           })
           .catch(err => {
-            alert(`Ошибка: ${err.message}`);
+            console.error('Import error:', err);
           });
-      } catch {
-        alert('Ошибка чтения файла');
+      } catch (err) {
+        console.error('Parse error:', err);
       }
     };
     reader.readAsText(file);
@@ -642,14 +608,7 @@ function App() {
     }
   };
 
-  const deleteImage = (id: string) => {
-    setImages(prev => prev.filter(img => img.id !== id));
-    if (activeImageId === id) {
-      const remaining = images.filter(img => img.id !== id);
-      setActiveImageId(remaining.length > 0 ? remaining[0].id : null);
-    }
-  };
-
+  // Переименование
   const startRename = (id: string, currentName: string) => {
     setEditingImageName(id);
     setTempName(currentName);
@@ -665,6 +624,7 @@ function App() {
     setTempName('');
   };
 
+  // Проверка попадания точки в полигон
   const isPointInPolygon = (point: Point, polygon: Point[]): boolean => {
     let inside = false;
     for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
@@ -677,6 +637,7 @@ function App() {
     return inside;
   };
 
+  // Zoom controls
   const zoomIn = () => {
     const viewport = viewportRef.current;
     if (!viewport) return;
@@ -712,6 +673,7 @@ function App() {
 
   return (
     <div className="h-screen flex flex-col bg-gray-900 text-white overflow-hidden">
+      {/* Скрытый input для загрузки файлов */}
       <input
         ref={fileInputRef}
         type="file"
@@ -736,7 +698,7 @@ function App() {
             Зонирование
           </h1>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2">
           <button
             onClick={() => fileInputRef.current?.click()}
             className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
@@ -797,8 +759,19 @@ function App() {
 
               {activeImage.zones.length > 0 && (
                 <>
-                  <button onClick={exportData} className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-xs font-medium transition-colors" title="Экспорт зон">💾 Экспорт зон</button>
-                  <button onClick={clearAllZones} className="px-3 py-1.5 bg-red-600/80 hover:bg-red-700 rounded-lg text-xs font-medium transition-colors">🗑️ Очистить</button>
+                  <button
+                    onClick={exportData}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-xs font-medium transition-colors"
+                    title="Экспорт только зон"
+                  >
+                    💾 Экспорт
+                  </button>
+                  <button
+                    onClick={clearAllZones}
+                    className="px-3 py-1.5 bg-red-600/80 hover:bg-red-700 rounded-lg text-xs font-medium transition-colors"
+                  >
+                    🗑️ Очистить
+                  </button>
                 </>
               )}
             </>
@@ -809,19 +782,32 @@ function App() {
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
         <aside className="w-64 bg-gray-800/95 border-r border-gray-700 flex flex-col shrink-0 overflow-hidden z-10">
+          {/* Список изображений */}
           <div className="p-3 border-b border-gray-700">
             <div className="flex items-center justify-between mb-2">
-              <h2 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Изображения ({images.length})</h2>
-              <button onClick={() => fileInputRef.current?.click()} className="text-[10px] text-blue-400 hover:text-blue-300 transition-colors">+ Добавить</button>
+              <h2 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">
+                Изображения ({images.length})
+              </h2>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="text-[10px] text-blue-400 hover:text-blue-300 transition-colors"
+              >
+                + Добавить
+              </button>
             </div>
+
             <div className="space-y-1 max-h-52 overflow-y-auto">
-              {images.length === 0 && <p className="text-gray-600 text-xs italic py-2">Нет загруженных изображений</p>}
+              {images.length === 0 && (
+                <p className="text-gray-600 text-xs italic py-2">Нет загруженных изображений</p>
+              )}
               {images.map((img) => (
                 <div
                   key={img.id}
                   onClick={() => switchImage(img.id)}
                   className={`flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-all group ${
-                    activeImageId === img.id ? 'bg-blue-600/20 ring-1 ring-blue-500/40' : 'hover:bg-white/5'
+                    activeImageId === img.id
+                      ? 'bg-blue-600/20 ring-1 ring-blue-500/40'
+                      : 'hover:bg-white/5'
                   }`}
                 >
                   <div className="w-8 h-8 rounded bg-gray-700 overflow-hidden shrink-0 flex items-center justify-center">
@@ -836,7 +822,10 @@ function App() {
                         onBlur={confirmRename}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') confirmRename();
-                          if (e.key === 'Escape') { setEditingImageName(null); setTempName(''); }
+                          if (e.key === 'Escape') {
+                            setEditingImageName(null);
+                            setTempName('');
+                          }
                           e.stopPropagation();
                         }}
                         autoFocus
@@ -846,19 +835,42 @@ function App() {
                     ) : (
                       <div className="flex items-center gap-1">
                         <span className="text-xs font-medium truncate">{img.name}</span>
-                        <button onClick={(e) => { e.stopPropagation(); startRename(img.id, img.name); }} className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-blue-400 transition-all text-[10px]" title="Переименовать">✎</button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            startRename(img.id, img.name);
+                          }}
+                          className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-blue-400 transition-all text-[10px]"
+                          title="Переименовать"
+                        >
+                          ✎
+                        </button>
                       </div>
                     )}
-                    <span className="text-[10px] text-gray-500">{img.zones.length} обл.</span>
+                    <span className="text-[10px] text-gray-500">
+                      {img.zones.length} обл.
+                    </span>
                   </div>
-                  <button onClick={(e) => { e.stopPropagation(); deleteImage(img.id); }} className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-red-400 transition-all text-xs p-1" title="Удалить">✕</button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      deleteImage(img.id);
+                    }}
+                    className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-red-400 transition-all text-xs p-1"
+                    title="Удалить"
+                  >
+                    ✕
+                  </button>
                 </div>
               ))}
             </div>
           </div>
 
+          {/* Категории */}
           <div className="p-3 border-b border-gray-700">
-            <h2 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">Категории</h2>
+            <h2 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">
+              Категории
+            </h2>
             <div className="space-y-1">
               {CATEGORIES.map((cat, index) => (
                 <button
@@ -866,15 +878,22 @@ function App() {
                   onClick={() => {
                     setActiveCategory(cat.id);
                     setMode('draw');
-                    if (currentPoints.length > 0) setCurrentPoints([]);
+                    if (currentPoints.length > 0) {
+                      setCurrentPoints([]);
+                    }
                   }}
                   className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg transition-all text-left ${
                     activeCategory === cat.id ? 'bg-white/10' : 'hover:bg-white/5'
                   }`}
                 >
-                  <span className="w-3.5 h-3.5 rounded-sm shrink-0" style={{ backgroundColor: cat.color }}></span>
+                  <span
+                    className="w-3.5 h-3.5 rounded-sm shrink-0"
+                    style={{ backgroundColor: cat.color }}
+                  ></span>
                   <span className="text-xs font-medium flex-1">{cat.name}</span>
-                  <span className="text-[10px] text-gray-500 bg-gray-700/50 px-1.5 py-0.5 rounded">{index + 1}</span>
+                  <span className="text-[10px] text-gray-500 bg-gray-700/50 px-1.5 py-0.5 rounded">
+                    {index + 1}
+                  </span>
                   <span className="text-[10px] font-bold text-gray-400 min-w-[16px] text-center">
                     {activeImage ? activeImage.zones.filter(z => z.category === cat.id).length : 0}
                   </span>
@@ -883,6 +902,7 @@ function App() {
             </div>
           </div>
 
+          {/* Список зон */}
           <div className="flex-1 overflow-y-auto p-3">
             <h2 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">
               Области ({activeImage ? activeImage.zones.length : 0})
@@ -898,14 +918,30 @@ function App() {
                   return (
                     <div
                       key={zone.id}
-                      onClick={() => { setSelectedZone(zone.id); setMode('select'); }}
+                      onClick={() => {
+                        setSelectedZone(zone.id);
+                        setMode('select');
+                      }}
                       className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg cursor-pointer transition-all group ${
-                        selectedZone === zone.id ? 'bg-white/10 ring-1 ring-white/20' : 'hover:bg-white/5'
+                        selectedZone === zone.id
+                          ? 'bg-white/10 ring-1 ring-white/20'
+                          : 'hover:bg-white/5'
                       }`}
                     >
-                      <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: category?.color }}></span>
+                      <span
+                        className="w-2.5 h-2.5 rounded-sm shrink-0"
+                        style={{ backgroundColor: category?.color }}
+                      ></span>
                       <span className="text-xs flex-1 truncate">{zone.label}</span>
-                      <button onClick={(e) => { e.stopPropagation(); deleteZone(zone.id); }} className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-red-400 transition-all text-xs">✕</button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteZone(zone.id);
+                        }}
+                        className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-red-400 transition-all text-xs"
+                      >
+                        ✕
+                      </button>
                     </div>
                   );
                 })}
@@ -913,8 +949,11 @@ function App() {
             )}
           </div>
 
+          {/* Инструкция */}
           <div className="p-3 border-t border-gray-700 bg-gray-800/50">
-            <h3 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5">Управление</h3>
+            <h3 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5">
+              Управление
+            </h3>
             <div className="grid grid-cols-1 gap-0.5 text-[10px] text-gray-500">
               <div><kbd className="text-gray-400">ЛКМ</kbd> — точка / выбрать</div>
               <div><kbd className="text-gray-400">1-я точка</kbd> — замкнуть</div>
@@ -928,7 +967,7 @@ function App() {
           </div>
         </aside>
 
-        {/* Main */}
+        {/* Main Canvas Area */}
         <main
           ref={viewportRef}
           className={`flex-1 relative overflow-hidden bg-gray-950 select-none ${
@@ -937,9 +976,13 @@ function App() {
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
-          onMouseLeave={() => { setIsPanning(false); setMousePos(null); }}
+          onMouseLeave={() => {
+            setIsPanning(false);
+            setMousePos(null);
+          }}
           onContextMenu={handleContextMenu}
         >
+          {/* Background pattern */}
           <div className="absolute inset-0 opacity-5" style={{
             backgroundImage: 'radial-gradient(circle, #ffffff 1px, transparent 1px)',
             backgroundSize: '20px 20px'
@@ -953,13 +996,19 @@ function App() {
                   className="border-2 border-dashed border-gray-700 rounded-2xl p-10 cursor-pointer hover:border-blue-500/50 hover:bg-gray-800/30 transition-all group mb-4"
                 >
                   <div className="text-5xl mb-4 group-hover:scale-110 transition-transform">🖼️</div>
-                  <h2 className="text-lg font-semibold text-gray-300 mb-2">Загрузите изображение</h2>
-                  <p className="text-gray-500 text-sm mb-4">План помещения, чертёж или фото</p>
+                  <h2 className="text-lg font-semibold text-gray-300 mb-2">
+                    Загрузите изображение
+                  </h2>
+                  <p className="text-gray-500 text-sm mb-4">
+                    План помещения, чертёж или фото — начните выделять зоны
+                  </p>
                   <div className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600/20 border border-blue-500/30 rounded-lg text-blue-400 text-sm">
                     <span>📁</span>
                     <span>Нажмите для выбора файла</span>
                   </div>
-                  <p className="text-gray-600 text-xs mt-3">Можно загрузить несколько файлов сразу</p>
+                  <p className="text-gray-600 text-xs mt-3">
+                    Можно загрузить несколько файлов сразу
+                  </p>
                 </div>
 
                 <button
@@ -972,13 +1021,15 @@ function App() {
               </div>
             </div>
           ) : (
-            <div style={{
-              position: 'absolute',
-              left: pan.x,
-              top: pan.y,
-              transformOrigin: '0 0',
-              transform: `scale(${zoom})`,
-            }}>
+            <div
+              style={{
+                position: 'absolute',
+                left: pan.x,
+                top: pan.y,
+                transformOrigin: '0 0',
+                transform: `scale(${zoom})`,
+              }}
+            >
               <canvas
                 ref={canvasRef}
                 width={activeImage.canvasSize.width}
@@ -994,61 +1045,41 @@ function App() {
             </div>
           )}
 
+          {/* Status Bar */}
           {activeImage && (
             <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-gray-800/95 backdrop-blur-sm rounded-full px-4 py-2 text-xs flex items-center gap-3 shadow-lg ring-1 ring-white/10 pointer-events-none">
-              <span className="text-gray-300 font-medium truncate max-w-[120px]">📄 {activeImage.name}</span>
+              <span className="text-gray-300 font-medium truncate max-w-[120px]">
+                📄 {activeImage.name}
+              </span>
               <span className="text-gray-600">•</span>
-              <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: CATEGORIES.find(c => c.id === activeCategory)?.color }}></span>
-              <span className="text-gray-300">{CATEGORIES.find(c => c.id === activeCategory)?.name}</span>
+              <span
+                className="w-2.5 h-2.5 rounded-full"
+                style={{ backgroundColor: CATEGORIES.find(c => c.id === activeCategory)?.color }}
+              ></span>
+              <span className="text-gray-300">
+                {CATEGORIES.find(c => c.id === activeCategory)?.name}
+              </span>
               <span className="text-gray-600">•</span>
-              <span className="text-gray-400">{mode === 'draw' ? '✏️' : '👆'}</span>
+              <span className="text-gray-400">
+                {mode === 'draw' ? '✏️' : '👆'}
+              </span>
               {currentPoints.length > 0 && mode === 'draw' && (
                 <>
                   <span className="text-gray-600">•</span>
-                  <span className="text-yellow-400">{currentPoints.length}т{currentPoints.length >= 3 && ' → замкните'}</span>
+                  <span className="text-yellow-400">
+                    {currentPoints.length}т
+                    {currentPoints.length >= 3 && ' → замкните'}
+                  </span>
                 </>
               )}
               <span className="text-gray-600">•</span>
-              <span className="text-gray-400">{zoomPercent}%</span>
+              <span className="text-gray-400">
+                {zoomPercent}%
+              </span>
             </div>
           )}
         </main>
       </div>
-
-      {/* Модальное окно экспорта */}
-      {exportModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between p-4 border-b border-gray-700">
-              <h2 className="text-lg font-semibold text-white">
-                {exportModal.type === 'project' ? '📦 Сохранение проекта' : '💾 Экспорт зон'}
-              </h2>
-              <button onClick={() => setExportModal(null)} className="text-gray-400 hover:text-white transition-colors text-xl">✕</button>
-            </div>
-            <div className="p-4 flex-1 overflow-hidden flex flex-col">
-              <p className="text-sm text-gray-400 mb-1">
-                Файл: <span className="text-white font-mono">{exportModal.filename}</span>
-              </p>
-              <p className="text-sm text-gray-400 mb-3">
-                Размер: <span className="text-white">{(exportModal.data.length / 1024).toFixed(1)} KB</span>
-              </p>
-              <div className="flex gap-2 mb-4">
-                <button onClick={downloadFromModal} className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium transition-colors">⬇️ Скачать</button>
-                <button onClick={openInNewTab} className="flex-1 px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg text-sm font-medium transition-colors">🔗 Новая вкладка</button>
-                <button onClick={copyToClipboard} className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg text-sm font-medium transition-colors">📋 Копировать</button>
-              </div>
-              <div className="flex-1 overflow-auto bg-gray-900 rounded-lg p-3">
-                <pre className="text-xs text-gray-300 font-mono whitespace-pre-wrap break-all">
-                  {exportModal.data.length > 50000 ? exportModal.data.slice(0, 50000) + '\n\n... (обрезано)' : exportModal.data}
-                </pre>
-              </div>
-            </div>
-            <div className="p-4 border-t border-gray-700 flex justify-end">
-              <button onClick={() => setExportModal(null)} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm font-medium transition-colors">Закрыть</button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
